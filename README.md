@@ -1,6 +1,4 @@
-Được, tôi sẽ làm README theo hướng **DocStack**, nhưng scope vẫn bao phủ đủ flow RAG trong hình sếp giao: **Data Source → Chunking → Embedding → Vector DB → Retrieval → Context → LLM → Answer + Source**.
 
-````md
 # DocStack
 
 > AI-powered documentation learning assistant that helps developers understand new technologies using official documentation.
