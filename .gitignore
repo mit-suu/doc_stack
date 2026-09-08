@@ -3,6 +3,11 @@
 agentkit-portable/
 AGENTS.md
 **/AGENTS.md
+_bmad/
+_bmad-output/
+.bmad/
+**/_bmad/
+**/_bmad-output/
 
 # Environment files and secrets
 .env
