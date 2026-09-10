@@ -9,6 +9,7 @@ import retrievalRoutes from './routes/retrievalRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import sessionRoutes from './routes/sessionRoutes.js';
+import { healthCheckHandler } from './controllers/healthController.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -23,13 +24,8 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.get('/api/health', (_req: Request, res: Response) => {
-  res.json({
-    status: 'ok',
-    message: 'DocStack Server is running',
-    timestamp: new Date().toISOString(),
-  });
-});
+// Health Check endpoints (Hỗ trợ /health, /heath, /api/health, /api/heath)
+app.get(['/health', '/heath', '/api/health', '/api/heath'], healthCheckHandler);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/documents', documentRoutes);

@@ -37,7 +37,7 @@ export default function RootLayout({
   return (
     <html
       lang="vi"
-      className={`dark ${plusJakartaSans.variable} ${geistSans.variable} ${jetbrainsMono.variable}`}
+      className={`light ${plusJakartaSans.variable} ${geistSans.variable} ${jetbrainsMono.variable}`}
       suppressHydrationWarning
     >
       <head>

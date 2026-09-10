@@ -15,7 +15,7 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [theme, setThemeState] = useState<ThemeMode>('dark');
+  const [theme, setThemeState] = useState<ThemeMode>('light');
   const [accentId, setAccentIdState] = useState<string>('rose'); // default to pastel rose as requested
   const [mounted, setMounted] = useState(false);
 
@@ -47,7 +47,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const savedTheme = localStorage.getItem('docstack-theme') as ThemeMode | null;
     const savedAccent = localStorage.getItem('docstack-accent');
 
-    const initialTheme: ThemeMode = savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : 'dark';
+    const initialTheme: ThemeMode = savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : 'light';
     const initialAccent = savedAccent && ACCENT_COLOR_PRESETS.some((p) => p.id === savedAccent) ? savedAccent : 'rose';
 
     setThemeState(initialTheme);
