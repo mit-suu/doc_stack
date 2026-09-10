@@ -1,117 +1,79 @@
-
 # DocStack
 
-> AI-powered documentation learning assistant that helps developers understand new technologies using official documentation.
+Nền tảng tri thức kỹ thuật ứng dụng AI, giúp developer hiểu công nghệ mới và xác định cách áp dụng công nghệ đó vào các hệ thống phần mềm thực tế.
 
-## 1. Problem
+## 1. Tổng quan
 
-Khi học một công nghệ mới như Next.js, React hoặc Tailwind CSS, developer thường gặp một số vấn đề:
+DocStack là một AI-powered Engineering Knowledge Platform sử dụng Retrieval-Augmented Generation (RAG) để tập trung hóa và khai thác tri thức kỹ thuật.
 
-- Documentation có quá nhiều trang và khó biết nên tìm thông tin ở đâu.
-- Việc tìm kiếm thông tin thủ công mất thời gian.
-- AI thông thường có thể trả lời nhanh nhưng thông tin có thể không dựa trên documentation chính thức hoặc phiên bản mới nhất.
-- Sau khi AI trả lời, người học vẫn khó xác minh thông tin và tìm nguồn để đọc sâu hơn.
+DocStack kết hợp hai nguồn kiến thức:
 
-## 2. Solution
+- Kiến thức kỹ thuật mới: Official documentation, API docs, SDK docs, integration guides, PDF, Markdown, text...
+- Kiến thức của dự án hiện tại: kiến trúc, technical spec, API spec, database schema, source code, internal docs...
 
-DocStack là một AI assistant giúp developer học công nghệ mới thông qua official documentation.
-
-User có thể đặt câu hỏi trực tiếp như:
-
-> "How do I install Next.js using CLI?"
-
-hoặc:
-
-> "How do I center a div using Tailwind CSS?"
-
-Hệ thống sẽ tìm kiếm nội dung liên quan từ documentation, truy xuất thông tin phù hợp và cung cấp câu trả lời dựa trên context tìm được.
-
-Mỗi câu trả lời sẽ đi kèm source để user có thể kiểm tra và đọc thêm nội dung gốc.
+Từ các nguồn dữ liệu này, DocStack truy xuất thông tin liên quan và tạo câu trả lời có ngữ cảnh, giúp developer không chỉ hiểu một công nghệ mà còn biết cách áp dụng vào dự án hiện tại.
 
 ---
 
-# 3. Core RAG Pipeline
+## 2. Vấn đề
 
-DocStack áp dụng kiến trúc Retrieval-Augmented Generation (RAG).
+Trong quá trình phát triển phần mềm, developer thường phải vừa hiểu hệ thống hiện tại vừa tìm hiểu công nghệ mới.
 
-```text
-Documentation Website / File
-            ↓
-       Data Collection
-            ↓
-       Text Extraction
-            ↓
-         Chunking
-            ↓
-        Embedding
-            ↓
-      Vector Database
-            ↓
-        User Question
-            ↓
-      Query Embedding
-            ↓
-   Similarity Search / Retrieval
-            ↓
-      Relevant Context
-            ↓
-            LLM
-            ↓
-Answer + Source Citation
-````
+- Kiến thức của dự án thường phân tán trong source code, kiến trúc, API spec, schema, và tài liệu nội bộ.
+- Kiến thức về công nghệ mới nằm rải rác trong documentation chính thức, bài viết, và tài liệu cộng đồng.
+
+AI chatbot thông thường có thể giải thích công nghệ, nhưng thiếu ngữ cảnh của dự án cụ thể. Kết quả: developer phải tự tổng hợp và suy diễn cách áp dụng công nghệ đó vào hệ thống hiện tại.
+
+Vấn đề cốt lõi: developer cần biết cả cách công nghệ hoạt động và cách áp dụng nó vào kiến trúc/dữ liệu/flow của dự án.
 
 ---
 
-# 4. Data Sources
+## 3. Giải pháp
 
-DocStack có thể sử dụng nhiều nguồn dữ liệu:
+DocStack đưa Project Knowledge và New Technical Knowledge vào cùng một workspace và sử dụng RAG để:
 
-### Documentation Website
+1. Thu thập tài liệu kỹ thuật và dữ liệu của dự án.
+2. Phân tích và chia tài liệu thành các đoạn (chunks).
+3. Sinh embedding cho từng chunk và lưu vào Vector Database.
+4. Tìm kiếm các nội dung liên quan tới câu hỏi của developer.
+5. Kết hợp context từ dự án hiện tại và tài liệu công nghệ mới.
+6. Sử dụng LLM để phân tích và tạo câu trả lời kèm trích dẫn nguồn.
 
-Ví dụ:
-
-* Next.js Documentation
-* React Documentation
-* Tailwind CSS Documentation
-* Express.js Documentation
-
-Hệ thống có thể thu thập nội dung từ các trang documentation để xây dựng Knowledge Base.
-
-### Document Files
-
-Admin hoặc user có thể thêm các tài liệu như:
-
-* PDF
-* Markdown
-* Text files
-
-Ví dụ:
-
-```text
-Next.js Documentation
-React Documentation
-Company Technical Guide
-Internal Documentation
-```
+Luồng chính:
+Project Knowledge + New Technical Knowledge → RAG Retrieval → Context-aware AI → Engineering Analysis → Source Verification
 
 ---
 
-# 5. Data Collection
+## 4. Nguồn dữ liệu (Data Sources)
 
-Đối với website documentation, hệ thống sẽ thu thập nội dung từ các trang liên quan.
+DocStack hỗ trợ nhiều nguồn:
 
-```text
-https://nextjs.org/docs
-        ↓
-Find Documentation Pages
-        ↓
-Collect Page Content
-        ↓
-Extract Main Content
-```
+### Documentation website
+Ví dụ: Next.js, React, Tailwind CSS, Express.js documentation.
 
-Mỗi trang sẽ được lưu cùng metadata:
+### Document files
+Admin/user có thể upload:
+- PDF
+- Markdown
+- Text
 
+Ví dụ nội dung:
+- Next.js Documentation
+- React Documentation
+- Company Technical Guide
+- Internal Documentation
+
+---
+
+## 5. Thu thập dữ liệu (Data Collection)
+
+Đối với website documentation:
+
+- Tìm các trang documentation liên quan.
+- Thu thập nội dung trang.
+- Trích xuất phần nội dung chính.
+
+Mỗi trang lưu cùng metadata ví dụ:
 ```json
 {
   "title": "Installation",
@@ -119,10 +81,6 @@ Mỗi trang sẽ được lưu cùng metadata:
   "source": "https://nextjs.org/docs/app/getting-started/installation",
   "technology": "Next.js"
 }
-```
-
----
-
 # 6. Chunking
 
 Documentation thường quá dài để gửi toàn bộ trực tiếp vào LLM.
