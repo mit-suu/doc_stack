@@ -6,13 +6,16 @@ import {
   createDocument,
   updateDocument,
   getDocumentById,
-  getAllDocuments,
+  getDocumentsByUserId,
+  getDocumentByIdAndUser,
+  deleteDocument,
 } from '../repositories/documentRepository.js';
 import { parseByFileType } from '../services/documentParser.js';
 import { crawlUrl, isPrivateOrBlockedHost } from '../services/urlCrawler.js';
 import { processDocument } from '../services/documentProcessor.js';
 import { getChunkSummariesByDocumentId } from '../repositories/chunkRepository.js';
 import { FileType } from '../models/document.js';
+import { AuthenticatedRequest } from '../middleware/authMiddleware.js';
 
 const ALLOWED_EXTENSIONS: Record<string, FileType> = {
   pdf: 'pdf',
@@ -59,10 +62,16 @@ export const uploadMiddleware = (req: Request, res: Response, next: NextFunction
 
 /**
  * POST /api/documents/upload
- * Nhận file upload, tạo document pending, trích xuất text và lưu DB
+ * Nhận file upload, tạo document pending gắn với userId, trích xuất text và lưu DB
  */
-export async function uploadDocumentHandler(req: Request, res: Response): Promise<void> {
+export async function uploadDocumentHandler(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      res.status(401).json({ error: 'Bạn cần đăng nhập để tải lên tài liệu' });
+      return;
+    }
+
     if (!req.file) {
       res.status(400).json({ error: 'Vui lòng cung cấp file cần upload trong trường "file"' });
       return;
@@ -86,7 +95,7 @@ export async function uploadDocumentHandler(req: Request, res: Response): Promis
       return;
     }
 
-    // 1. Tạo document với status: "pending" trước
+    // 1. Tạo document với status: "pending" và gán userId của người dùng
     const createdDoc = await createDocument({
       title: originalName,
       sourceType: 'file',
@@ -94,6 +103,7 @@ export async function uploadDocumentHandler(req: Request, res: Response): Promis
       fileType,
       rawText: '',
       status: 'pending',
+      userId,
     });
 
     // 2. Parse text theo định dạng
@@ -129,10 +139,16 @@ export async function uploadDocumentHandler(req: Request, res: Response): Promis
 
 /**
  * POST /api/documents/crawl
- * Nhận URL, tạo document pending, crawl HTML lấy text và lưu DB
+ * Nhận URL, tạo document pending gắn với userId, crawl HTML lấy text và lưu DB
  */
-export async function crawlDocumentHandler(req: Request, res: Response): Promise<void> {
+export async function crawlDocumentHandler(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      res.status(401).json({ error: 'Bạn cần đăng nhập để crawl tài liệu' });
+      return;
+    }
+
     const { url } = req.body;
 
     if (!url || typeof url !== 'string' || !url.trim()) {
@@ -159,13 +175,14 @@ export async function crawlDocumentHandler(req: Request, res: Response): Promise
       return;
     }
 
-    // 1. Tạo document với status: "pending", sourceType: "url"
+    // 1. Tạo document với status: "pending", sourceType: "url" gắn với userId
     const createdDoc = await createDocument({
       title: trimmedUrl,
       sourceType: 'url',
       sourceUrl: trimmedUrl,
       rawText: '',
       status: 'pending',
+      userId,
     });
 
     // 2. Crawl nội dung trang web
@@ -206,11 +223,17 @@ export async function crawlDocumentHandler(req: Request, res: Response): Promise
 
 /**
  * GET /api/documents
- * Lấy danh sách tất cả document (rút gọn, không có rawText)
+ * Lấy danh sách tất cả document của riêng user hiện tại (rút gọn, không có rawText)
  */
-export async function getAllDocumentsHandler(_req: Request, res: Response): Promise<void> {
+export async function getAllDocumentsHandler(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
-    const documents = await getAllDocuments();
+    const userId = req.user?.userId;
+    if (!userId) {
+      res.status(401).json({ error: 'Bạn cần đăng nhập để xem danh sách tài liệu' });
+      return;
+    }
+
+    const documents = await getDocumentsByUserId(userId);
     res.status(200).json(documents);
   } catch (error: any) {
     console.error('[Get All Documents] ❌ Lỗi server khi lấy danh sách tài liệu:', error);
@@ -220,10 +243,16 @@ export async function getAllDocumentsHandler(_req: Request, res: Response): Prom
 
 /**
  * GET /api/documents/:id
- * Lấy đầy đủ chi tiết 1 document bao gồm rawText
+ * Lấy đầy đủ chi tiết 1 document bao gồm rawText (xác thực quyền sở hữu của user)
  */
-export async function getDocumentByIdHandler(req: Request, res: Response): Promise<void> {
+export async function getDocumentByIdHandler(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      res.status(401).json({ error: 'Bạn cần đăng nhập để xem tài liệu' });
+      return;
+    }
+
     const rawId = req.params.id;
     const id = Array.isArray(rawId) ? rawId[0] : rawId;
 
@@ -232,9 +261,9 @@ export async function getDocumentByIdHandler(req: Request, res: Response): Promi
       return;
     }
 
-    const document = await getDocumentById(id);
+    const document = await getDocumentByIdAndUser(id, userId);
     if (!document) {
-      res.status(404).json({ error: 'Không tìm thấy tài liệu với ID đã cung cấp' });
+      res.status(404).json({ error: 'Không tìm thấy tài liệu hoặc bạn không có quyền truy cập vào tài liệu này' });
       return;
     }
 
@@ -246,16 +275,61 @@ export async function getDocumentByIdHandler(req: Request, res: Response): Promi
 }
 
 /**
- * POST /api/documents/:id/process
- * Kích hoạt cắt chunk và tạo embedding cho document
+ * DELETE /api/documents/:id
+ * Xóa một tài liệu và toàn bộ chunk liên quan của chính user đó
  */
-export async function processDocumentHandler(req: Request, res: Response): Promise<void> {
+export async function deleteDocumentHandler(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      res.status(401).json({ error: 'Bạn cần đăng nhập để xóa tài liệu' });
+      return;
+    }
+
     const rawId = req.params.id;
     const id = Array.isArray(rawId) ? rawId[0] : rawId;
 
     if (!id || !ObjectId.isValid(id)) {
       res.status(400).json({ error: 'ID tài liệu không hợp lệ (phải là 24 ký tự hex)' });
+      return;
+    }
+
+    const deleted = await deleteDocument(id, userId);
+    if (!deleted) {
+      res.status(404).json({ error: 'Không tìm thấy tài liệu hoặc bạn không có quyền xóa tài liệu này' });
+      return;
+    }
+
+    res.status(200).json({ message: 'Đã xóa tài liệu và toàn bộ vector chunks thành công' });
+  } catch (error: any) {
+    console.error(`[Delete Document] ❌ Lỗi khi xóa tài liệu ${req.params.id}:`, error);
+    res.status(500).json({ error: error.message || 'Lỗi server khi xóa tài liệu' });
+  }
+}
+
+/**
+ * POST /api/documents/:id/process
+ * Kích hoạt cắt chunk và tạo embedding cho document
+ */
+export async function processDocumentHandler(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      res.status(401).json({ error: 'Bạn cần đăng nhập để xử lý tài liệu' });
+      return;
+    }
+
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+
+    if (!id || !ObjectId.isValid(id)) {
+      res.status(400).json({ error: 'ID tài liệu không hợp lệ (phải là 24 ký tự hex)' });
+      return;
+    }
+
+    const doc = await getDocumentByIdAndUser(id, userId);
+    if (!doc) {
+      res.status(404).json({ error: 'Không tìm thấy tài liệu hoặc bạn không có quyền xử lý tài liệu này' });
       return;
     }
 
@@ -274,8 +348,14 @@ export async function processDocumentHandler(req: Request, res: Response): Promi
  * GET /api/documents/:id/chunks
  * Lấy danh sách các chunk đã tạo của 1 document (kèm độ dài vector embedding để kiểm tra)
  */
-export async function getDocumentChunksHandler(req: Request, res: Response): Promise<void> {
+export async function getDocumentChunksHandler(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      res.status(401).json({ error: 'Bạn cần đăng nhập để xem chunks của tài liệu' });
+      return;
+    }
+
     const rawId = req.params.id;
     const id = Array.isArray(rawId) ? rawId[0] : rawId;
 
@@ -284,9 +364,9 @@ export async function getDocumentChunksHandler(req: Request, res: Response): Pro
       return;
     }
 
-    const doc = await getDocumentById(id);
+    const doc = await getDocumentByIdAndUser(id, userId);
     if (!doc) {
-      res.status(404).json({ error: 'Không tìm thấy tài liệu với ID đã cung cấp' });
+      res.status(404).json({ error: 'Không tìm thấy tài liệu hoặc bạn không có quyền xem tài liệu này' });
       return;
     }
 
@@ -299,4 +379,3 @@ export async function getDocumentChunksHandler(req: Request, res: Response): Pro
     });
   }
 }
-

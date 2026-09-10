@@ -7,19 +7,22 @@ import {
   createSession,
   appendMessagesToSession,
 } from '../repositories/sessionRepository.js';
+import {
+  getDocumentIdsByUser,
+  getDocumentsByIdsAndUser,
+} from '../repositories/documentRepository.js';
 import { SessionMessage } from '../models/session.js';
 import { aiLogger } from '../utils/aiLogger.js';
 
 /**
  * POST /api/chat
  * Nhận câu hỏi từ người dùng, lưu vào phiên chat riêng biệt của người dùng,
- * thực hiện RAG tìm kiếm ngữ cảnh và lưu câu trả lời kèm trích dẫn.
+ * thực hiện RAG tìm kiếm ngữ cảnh (phân quyền chỉ tìm trong tài liệu của user) và lưu câu trả lời kèm trích dẫn.
  * Hỗ trợ cả Streaming (Vercel AI SDK SSE) và Non-streaming JSON.
  */
 export async function chatHandler(req: AuthenticatedRequest, res: Response): Promise<void> {
   const t0 = Date.now();
   const rawMessage = req.body?.message || req.body?.query;
-  const documentId = req.body?.documentId;
 
   try {
     const userId = req.user?.userId;
@@ -35,14 +38,26 @@ export async function chatHandler(req: AuthenticatedRequest, res: Response): Pro
       return;
     }
 
-    if (documentId && !ObjectId.isValid(documentId)) {
-      res.status(400).json({ error: 'documentId không hợp lệ (phải là 24 ký tự hex)' });
-      return;
-    }
-
     const trimmedMessage = rawMessage.trim();
 
-    // 1. Phân quyền và xác thực phiên chat (Session)
+    // 1. Xác định phạm vi tài liệu (Document scope) được phép tra cứu của riêng user
+    let targetDocIds: string[] | undefined = undefined;
+    const rawDocIds = req.body?.documentIds;
+
+    if (Array.isArray(rawDocIds) && rawDocIds.length > 0) {
+      // Người dùng chọn cụ thể 1 hoặc nhiều tài liệu -> Kiểm tra quyền sở hữu của user
+      const userAllowedDocs = await getDocumentsByIdsAndUser(rawDocIds, userId);
+      targetDocIds = userAllowedDocs.map((d) => d._id!.toString());
+    } else if (req.body?.documentId && typeof req.body.documentId === 'string' && ObjectId.isValid(req.body.documentId)) {
+      const userAllowedDocs = await getDocumentsByIdsAndUser([req.body.documentId], userId);
+      targetDocIds = userAllowedDocs.map((d) => d._id!.toString());
+    } else {
+      // Không chọn tài liệu cụ thể -> Giới hạn trong TOÀN BỘ tài liệu của CHÍNH USER NÀY
+      const userDocObjectIds = await getDocumentIdsByUser(userId);
+      targetDocIds = userDocObjectIds.map((id) => id.toString());
+    }
+
+    // 2. Phân quyền và xác thực phiên chat (Session)
     let sessionTitleToUpdate: string | undefined = undefined;
 
     if (sessionId) {
@@ -63,7 +78,7 @@ export async function chatHandler(req: AuthenticatedRequest, res: Response): Pro
       sessionId = newSession._id?.toString();
     }
 
-    // 2. Chuẩn bị tin nhắn của user
+    // 3. Chuẩn bị tin nhắn của user
     const userMessage: SessionMessage = {
       id: `msg_user_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       role: 'user',
@@ -79,7 +94,7 @@ export async function chatHandler(req: AuthenticatedRequest, res: Response): Pro
 
     if (wantsStream) {
       // --- XỬ LÝ STREAMING (Vercel AI SDK SSE) ---
-      const { streamResult, citations } = await streamChatWithRAG(trimmedMessage, documentId);
+      const { streamResult, citations } = await streamChatWithRAG(trimmedMessage, targetDocIds);
 
       res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
       res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -147,7 +162,7 @@ export async function chatHandler(req: AuthenticatedRequest, res: Response): Pro
     }
 
     // --- XỬ LÝ ĐỒNG BỘ NON-STREAMING (Giữ nguyên tương thích ngược) ---
-    const ragResult = await chatWithRAG(trimmedMessage, documentId);
+    const ragResult = await chatWithRAG(trimmedMessage, targetDocIds);
 
     aiLogger.chat({
       query: trimmedMessage,

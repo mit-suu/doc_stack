@@ -14,6 +14,7 @@ export interface Document {
   rawText: string;            // text thô đã extract
   status: DocumentStatus;     // trạng thái xử lý
   errorMessage?: string;      // thông báo lỗi nếu status = "failed"
+  userId?: string;            // ID người dùng sở hữu tài liệu này
   createdAt: Date;
   updatedAt: Date;
 }

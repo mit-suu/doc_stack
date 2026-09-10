@@ -15,7 +15,10 @@ export interface BatchCrawlResult {
  * Service crawl hàng loạt các trang tài liệu theo Preset
  * Xử lý tuần tự có delay, tự động nhúng vector (embedding) cho từng trang
  */
-export async function crawlPreset(presetId: string): Promise<BatchCrawlResult> {
+export async function crawlPreset(
+  presetId: string,
+  userId?: string
+): Promise<BatchCrawlResult> {
   const preset = getDocPresetById(presetId);
   if (!preset) {
     const error: any = new Error(`Không tìm thấy bộ tài liệu mẫu (preset) với mã: "${presetId}"`);
@@ -33,13 +36,14 @@ export async function crawlPreset(presetId: string): Promise<BatchCrawlResult> {
     console.log(`[BatchCrawler] [${i + 1}/${preset.urls.length}] Đang xử lý: ${url}`);
 
     try {
-      // 1. Tạo document pending
+      // 1. Tạo document pending gắn với userId của người dùng
       const createdDoc = await createDocument({
         title: url,
         sourceType: 'url',
         sourceUrl: url,
         rawText: '',
         status: 'pending',
+        userId,
       });
 
       // 2. Crawl nội dung HTML và làm sạch rác UI

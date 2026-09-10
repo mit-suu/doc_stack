@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { getAllDocPresetsSummary, getDocPresetById } from '../config/docPresets.js';
 import { crawlPreset } from '../services/batchCrawler.js';
+import { AuthenticatedRequest } from '../middleware/authMiddleware.js';
 
 /**
  * GET /api/presets
@@ -18,10 +19,16 @@ export async function getPresetsHandler(_req: Request, res: Response): Promise<v
 
 /**
  * POST /api/presets/:id/import
- * Kích hoạt tải hàng loạt toàn bộ trang của 1 preset
+ * Kích hoạt tải hàng loạt toàn bộ trang của 1 preset cho user hiện tại
  */
-export async function importPresetHandler(req: Request, res: Response): Promise<void> {
+export async function importPresetHandler(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      res.status(401).json({ error: 'Bạn cần đăng nhập để tải bộ tài liệu mẫu' });
+      return;
+    }
+
     const rawId = req.params.id;
     const presetId = Array.isArray(rawId) ? rawId[0] : rawId;
 
@@ -36,7 +43,7 @@ export async function importPresetHandler(req: Request, res: Response): Promise<
       return;
     }
 
-    const result = await crawlPreset(presetId);
+    const result = await crawlPreset(presetId, userId);
     res.status(200).json(result);
   } catch (error: any) {
     console.error(`[Presets Controller] ❌ Lỗi khi tải preset ${req.params.id}:`, error);

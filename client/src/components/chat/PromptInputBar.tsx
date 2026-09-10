@@ -5,31 +5,22 @@ import { Icon } from '../ui/Icon';
 
 interface PromptInputBarProps {
   initialPrompt?: string;
-  activeContextDoc?: string | null;
   onSendPrompt?: (text: string) => void;
   onAttachFile?: () => void;
-  onRemoveContext?: () => void;
   className?: string;
   isLoading?: boolean;
 }
 
 export const PromptInputBar: React.FC<PromptInputBarProps> = ({
   initialPrompt = '',
-  activeContextDoc = null,
   onSendPrompt,
   onAttachFile,
-  onRemoveContext,
   className = '',
   isLoading = false,
 }) => {
   const [prompt, setPrompt] = useState(initialPrompt);
-  const [contextDoc, setContextDoc] = useState<string | null>(activeContextDoc);
   const [isRecording, setIsRecording] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  React.useEffect(() => {
-    setContextDoc(activeContextDoc ?? null);
-  }, [activeContextDoc]);
 
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -57,29 +48,10 @@ export const PromptInputBar: React.FC<PromptInputBarProps> = ({
             type="button"
             onClick={onAttachFile}
             className="w-10 h-10 rounded-full flex items-center justify-center text-outline hover:text-on-surface hover:bg-black/[0.06] dark:hover:bg-white/[0.08] transition-colors shrink-0 cursor-pointer"
-            title="Đính kèm tệp tham chiếu"
+            title="Đính kèm tệp tài liệu"
           >
             <Icon name="add_circle" className="text-[20px]" />
           </button>
-
-          {/* Dynamic Context Tag Pill */}
-          {contextDoc && (
-            <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/[0.05] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06] text-outline text-label-mono font-label-mono shrink-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-tertiary" />
-              <span className="text-on-surface-variant max-w-[120px] truncate">{contextDoc}</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setContextDoc(null);
-                  onRemoveContext?.();
-                }}
-                className="hover:text-on-surface cursor-pointer"
-                title="Bỏ ngữ cảnh tệp này"
-              >
-                <Icon name="close" className="text-[12px]" />
-              </button>
-            </div>
-          )}
 
           {/* Input Textbox */}
           <input
@@ -88,7 +60,7 @@ export const PromptInputBar: React.FC<PromptInputBarProps> = ({
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="w-full bg-transparent border-none text-on-surface placeholder:text-outline/70 focus:outline-none font-body-md text-body-md py-1 px-1"
+            className="w-full bg-transparent border-none text-on-surface placeholder:text-outline/70 focus:outline-none font-body-md text-body-md py-1 px-2"
             placeholder="Hỏi bất kỳ điều gì từ tài liệu của bạn... (Gõ '/' để mở lệnh nhanh)"
           />
 

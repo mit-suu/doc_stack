@@ -1,6 +1,7 @@
 import { ObjectId } from 'mongodb';
 import { getDb } from '../config/db.js';
 import { Document, DocumentSummary, DocumentStatus } from '../models/document.js';
+import { deleteChunksByDocumentId } from './chunkRepository.js';
 
 const COLLECTION_NAME = 'documents';
 
@@ -83,7 +84,35 @@ export async function getDocumentById(id: string | ObjectId): Promise<Document |
 }
 
 /**
- * Lấy danh sách tất cả document, sắp xếp theo createdAt giảm dần (không bao gồm rawText để giảm payload)
+ * Lấy chi tiết một document theo ID và xác minh quyền sở hữu userId
+ */
+export async function getDocumentByIdAndUser(
+  id: string | ObjectId,
+  userId: string
+): Promise<Document | null> {
+  const db = getDb();
+  const objectId = typeof id === 'string' ? new ObjectId(id) : id;
+  return await db
+    .collection<Document>(COLLECTION_NAME)
+    .findOne({ _id: objectId, userId });
+}
+
+/**
+ * Lấy danh sách tất cả document của một user cụ thể (sắp xếp createdAt giảm dần, không gồm rawText)
+ */
+export async function getDocumentsByUserId(userId: string): Promise<DocumentSummary[]> {
+  const db = getDb();
+  const docs = await db
+    .collection<Document>(COLLECTION_NAME)
+    .find({ userId }, { projection: { rawText: 0 } })
+    .sort({ createdAt: -1 })
+    .toArray();
+
+  return docs as unknown as DocumentSummary[];
+}
+
+/**
+ * Lấy danh sách tất cả document (dùng cho service nội bộ nếu cần)
  */
 export async function getAllDocuments(): Promise<DocumentSummary[]> {
   const db = getDb();
@@ -94,4 +123,65 @@ export async function getAllDocuments(): Promise<DocumentSummary[]> {
     .toArray();
 
   return docs as unknown as DocumentSummary[];
+}
+
+/**
+ * Lấy danh sách các ObjectId document thuộc về một user
+ */
+export async function getDocumentIdsByUser(userId: string): Promise<ObjectId[]> {
+  const db = getDb();
+  const docs = await db
+    .collection<Document>(COLLECTION_NAME)
+    .find({ userId }, { projection: { _id: 1 } })
+    .toArray();
+
+  return docs.map((d) => d._id as ObjectId);
+}
+
+/**
+ * Lấy và kiểm tra danh sách document theo mảng ID và userId
+ */
+export async function getDocumentsByIdsAndUser(
+  ids: string[],
+  userId: string
+): Promise<DocumentSummary[]> {
+  const validObjectIds = ids
+    .filter((id) => ObjectId.isValid(id))
+    .map((id) => new ObjectId(id));
+
+  if (validObjectIds.length === 0) return [];
+
+  const db = getDb();
+  const docs = await db
+    .collection<Document>(COLLECTION_NAME)
+    .find(
+      { _id: { $in: validObjectIds }, userId },
+      { projection: { rawText: 0 } }
+    )
+    .toArray();
+
+  return docs as unknown as DocumentSummary[];
+}
+
+/**
+ * Xóa một document và toàn bộ các chunk liên quan trong collection document_chunks
+ */
+export async function deleteDocument(
+  id: string | ObjectId,
+  userId: string
+): Promise<boolean> {
+  const db = getDb();
+  const objectId = typeof id === 'string' ? new ObjectId(id) : id;
+
+  const result = await db
+    .collection<Document>(COLLECTION_NAME)
+    .deleteOne({ _id: objectId, userId });
+
+  if (result.deletedCount > 0) {
+    // Xóa toàn bộ các chunk trong collection document_chunks
+    await deleteChunksByDocumentId(objectId);
+    return true;
+  }
+
+  return false;
 }

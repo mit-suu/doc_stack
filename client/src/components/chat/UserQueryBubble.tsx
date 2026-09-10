@@ -23,17 +23,8 @@ export const UserQueryBubble: React.FC<UserQueryBubbleProps> = ({ message }) => 
           </span>
         </div>
 
-        {/* Query content */}
-        <p className="font-body-md text-body-md text-on-surface leading-relaxed">
-          {message.attachedDoc && (
-            <>
-              Dựa trên{' '}
-              <code className="font-code-inline text-code-inline px-1.5 py-0.5 rounded bg-surface-container-lowest text-secondary border border-black/[0.06] dark:border-transparent">
-                {message.attachedDoc}
-              </code>
-              :{' '}
-            </>
-          )}
+        {/* Query content - purely user question, no auto-injected prefix */}
+        <p className="font-body-md text-body-md text-on-surface leading-relaxed whitespace-pre-wrap">
           {message.queryText}
         </p>
 
@@ -41,7 +32,7 @@ export const UserQueryBubble: React.FC<UserQueryBubbleProps> = ({ message }) => 
         <div className="flex items-center gap-2 mt-2 pt-2 border-t border-black/[0.06] dark:border-white/[0.06]">
           <Icon name="attachment" className="text-secondary text-[14px]" />
           <span className="font-label-mono text-label-mono text-outline">
-            {message.attachedDoc ? `Ngữ cảnh: ${message.attachedDoc}` : 'Ngữ cảnh: Toàn bộ kho tài liệu'} • Mô hình: {message.model}
+            {message.attachedDoc ? `Ngữ cảnh: ${message.attachedDoc}` : 'Ngữ cảnh: Toàn bộ kho tài liệu'} • Mô hình: {message.model || 'Gemini 3.6 Flash'}
           </span>
         </div>
       </div>

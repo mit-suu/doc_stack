@@ -39,7 +39,7 @@ const CHAT_MODEL = process.env.GEMINI_CHAT_MODEL || 'gemini-3.6-flash';
  */
 export async function chatWithRAG(
   query: string,
-  documentId?: string
+  documentIds?: string[] | string
 ): Promise<ChatResponse> {
   const trimmedQuery = (query || '').trim();
   if (!trimmedQuery) {
@@ -49,7 +49,7 @@ export async function chatWithRAG(
   // 1. Truy xuất các đoạn ngữ cảnh liên quan nhất từ Atlas Vector Search
   let relevantChunks: RetrievedChunk[] = [];
   try {
-    relevantChunks = await retrieveContext(trimmedQuery, 4, documentId);
+    relevantChunks = await retrieveContext(trimmedQuery, 4, documentIds);
   } catch (err: any) {
     console.warn('[ChatService] ⚠️ Lỗi khi retrieveContext:', err.message);
   }
@@ -126,7 +126,7 @@ export interface StreamChatRAGResult {
  */
 export async function streamChatWithRAG(
   query: string,
-  documentId?: string
+  documentIds?: string[] | string
 ): Promise<StreamChatRAGResult> {
   const trimmedQuery = (query || '').trim();
   if (!trimmedQuery) {
@@ -136,7 +136,7 @@ export async function streamChatWithRAG(
   // 1. Truy xuất các đoạn ngữ cảnh liên quan nhất từ Atlas Vector Search
   let relevantChunks: RetrievedChunk[] = [];
   try {
-    relevantChunks = await retrieveContext(trimmedQuery, 4, documentId);
+    relevantChunks = await retrieveContext(trimmedQuery, 4, documentIds);
   } catch (err: any) {
     console.warn('[ChatService] ⚠️ Lỗi khi retrieveContext:', err.message);
   }

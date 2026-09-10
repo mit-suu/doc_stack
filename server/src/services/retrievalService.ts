@@ -14,13 +14,13 @@ const DEFAULT_NUM_CANDIDATES = 150;
  *
  * @param query - Chuỗi câu hỏi / câu truy vấn tìm kiếm
  * @param topK - Số lượng chunk tối đa trả về (mặc định 5)
- * @param documentId - Tùy chọn lọc theo một documentId cụ thể
+ * @param documentIds - Tùy chọn lọc theo một hoặc nhiều documentId cụ thể
  * @returns Danh sách các chunk liên quan nhất kèm điểm tương đồng (score)
  */
 export async function retrieveContext(
   query: string,
   topK: number = DEFAULT_TOP_K,
-  documentId?: string
+  documentIds?: string[] | string
 ): Promise<RetrievedChunk[]> {
   const t0 = Date.now();
   const trimmedQuery = (query || '').trim();
@@ -36,7 +36,7 @@ export async function retrieveContext(
     aiLogger.retrieval({
       query: trimmedQuery,
       topK,
-      filterDocId: documentId,
+      filterDocId: Array.isArray(documentIds) ? documentIds.join(',') : documentIds,
       resultsCount: 0,
       durationMs: Date.now() - t0,
     });
@@ -49,16 +49,39 @@ export async function retrieveContext(
   // 2. Xây dựng pipeline $vectorSearch
   const numCandidates = Math.max(topK * 20, DEFAULT_NUM_CANDIDATES);
 
-  // Xây dựng bộ lọc filter nếu có truyền documentId
+  // Xây dựng bộ lọc filter nếu có truyền documentIds (hỗ trợ cả 1 hoặc nhiều tài liệu)
   let filter: any = undefined;
-  if (documentId) {
-    if (!ObjectId.isValid(documentId)) {
-      const err: any = new Error('documentId lọc không hợp lệ (phải là 24 ký tự hex)');
-      err.statusCode = 400;
-      throw err;
+  if (Array.isArray(documentIds)) {
+    if (documentIds.length === 0) {
+      // User không có tài liệu nào thuộc phạm vi cho phép -> không trả về chunk nào
+      aiLogger.retrieval({
+        query: trimmedQuery,
+        topK,
+        filterDocId: 'empty_user_scope',
+        resultsCount: 0,
+        durationMs: Date.now() - t0,
+      });
+      return [];
     }
+
+    const validObjectIds = documentIds
+      .filter((id) => id && ObjectId.isValid(id))
+      .map((id) => new ObjectId(id));
+
+    if (validObjectIds.length === 0) {
+      return [];
+    } else if (validObjectIds.length === 1) {
+      filter = {
+        documentId: { $eq: validObjectIds[0] },
+      };
+    } else {
+      filter = {
+        documentId: { $in: validObjectIds },
+      };
+    }
+  } else if (typeof documentIds === 'string' && ObjectId.isValid(documentIds)) {
     filter = {
-      documentId: { $eq: new ObjectId(documentId) },
+      documentId: { $eq: new ObjectId(documentIds) },
     };
   }
 
@@ -107,7 +130,7 @@ export async function retrieveContext(
     aiLogger.retrieval({
       query: trimmedQuery,
       topK,
-      filterDocId: documentId,
+      filterDocId: Array.isArray(documentIds) ? documentIds.join(',') : documentIds,
       resultsCount: results.length,
       topScore: results[0]?.score,
       sources: results.map((r) => r.metadata.title),
@@ -119,7 +142,7 @@ export async function retrieveContext(
     aiLogger.retrieval({
       query: trimmedQuery,
       topK,
-      filterDocId: documentId,
+      filterDocId: Array.isArray(documentIds) ? documentIds.join(',') : documentIds,
       resultsCount: 0,
       durationMs: Date.now() - t0,
       error: err.message,

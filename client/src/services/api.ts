@@ -180,6 +180,21 @@ export async function crawlDocument(url: string): Promise<BackendDocument> {
 }
 
 /**
+ * Xóa một tài liệu và các vector chunks liên quan
+ */
+export async function deleteDocument(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/documents/${id}`, {
+    method: 'DELETE',
+    headers: { ...getAuthHeaders() },
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Lỗi khi xóa tài liệu');
+  }
+}
+
+/**
  * Lấy danh sách các phiên chat của riêng user hiện tại
  */
 export async function fetchSessions(): Promise<BackendSession[]> {
@@ -261,15 +276,26 @@ export async function deleteSession(sessionId: string): Promise<void> {
 export async function sendChatMessage(
   message: string,
   sessionId?: string,
-  documentId?: string
+  documentIds?: string[] | string
 ): Promise<ChatResponse> {
+  const docIdsArray = Array.isArray(documentIds)
+    ? documentIds
+    : documentIds
+    ? [documentIds]
+    : undefined;
+
   const res = await fetch(`${API_BASE_URL}/api/chat`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...getAuthHeaders(),
     },
-    body: JSON.stringify({ message, sessionId, documentId }),
+    body: JSON.stringify({
+      message,
+      sessionId,
+      documentIds: docIdsArray,
+      documentId: docIdsArray?.[0],
+    }),
   });
 
   const data = await res.json();
@@ -301,9 +327,15 @@ export interface StreamChatCallbacks {
 export async function streamChatMessage(
   message: string,
   sessionId?: string,
-  documentId?: string,
+  documentIds?: string[] | string,
   callbacks?: StreamChatCallbacks
 ): Promise<{ answer: string; citations: CitationItem[]; sessionId?: string }> {
+  const docIdsArray = Array.isArray(documentIds)
+    ? documentIds
+    : documentIds
+    ? [documentIds]
+    : undefined;
+
   const res = await fetch(`${API_BASE_URL}/api/chat?stream=true`, {
     method: 'POST',
     headers: {
@@ -311,7 +343,13 @@ export async function streamChatMessage(
       Accept: 'text/event-stream',
       ...getAuthHeaders(),
     },
-    body: JSON.stringify({ message, sessionId, documentId, stream: true }),
+    body: JSON.stringify({
+      message,
+      sessionId,
+      documentIds: docIdsArray,
+      documentId: docIdsArray?.[0],
+      stream: true,
+    }),
   });
 
   if (!res.ok) {

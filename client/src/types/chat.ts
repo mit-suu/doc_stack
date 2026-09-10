@@ -43,13 +43,13 @@ export interface AiAnalysisData {
   vectorSimilarity: string;
   executiveSummary: string;
   stats: MetricStat[];
-  comparisonTable: {
+  comparisonTable?: {
     title: string;
     subtitle: string;
     badge: string;
     rows: ComparisonCriterion[];
   };
-  codeSnippet: CodeSnippet;
+  codeSnippet?: CodeSnippet;
   citations: Citation[];
-  followUpSuggestions: string[];
+  followUpSuggestions?: string[];
 }
