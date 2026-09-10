@@ -13,12 +13,42 @@ import { healthCheckHandler } from './controllers/healthController.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
+
+// Danh sách các domain được phép gọi API (CORS)
+const defaultAllowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'https://doc-stack.vercel.app',
+];
+
+const envOrigins = process.env.CLIENT_URL
+  ? process.env.CLIENT_URL.split(',').map((url) => url.trim().replace(/\/$/, ''))
+  : [];
+
+const allowedOrigins = Array.from(new Set([...defaultAllowedOrigins, ...envOrigins]));
 
 app.use(
   cors({
-    origin: CLIENT_URL,
+    origin: (origin, callback) => {
+      // Cho phép request không có origin (cURL, Postman, health check)
+      if (!origin) return callback(null, true);
+
+      const normalizedOrigin = origin.replace(/\/$/, '');
+      const isAllowed =
+        allowedOrigins.includes(normalizedOrigin) ||
+        normalizedOrigin.endsWith('doc-stack.vercel.app') ||
+        normalizedOrigin.includes('vercel.app');
+
+      if (isAllowed) {
+        callback(null, true);
+      } else {
+        console.warn(`[CORS] ⚠️ Origin bị từ chối: ${origin}`);
+        callback(null, false);
+      }
+    },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key'],
   })
 );
 app.use(express.json());
@@ -49,7 +79,7 @@ async function startServer() {
 
   app.listen(PORT, () => {
     console.log(`[Server] 🚀 Server đang chạy tại: http://localhost:${PORT}`);
-    console.log(`[Server] 🔗 CORS cho phép client: ${CLIENT_URL}`);
+    console.log(`[Server] 🔗 CORS cho phép client: ${allowedOrigins.join(', ')}`);
   });
 }
 
