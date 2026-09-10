@@ -5,23 +5,29 @@ import { Icon } from '../ui/Icon';
 
 interface PromptInputBarProps {
   initialPrompt?: string;
-  activeContextDoc?: string;
+  activeContextDoc?: string | null;
   onSendPrompt?: (text: string) => void;
   onAttachFile?: () => void;
+  onRemoveContext?: () => void;
   className?: string;
 }
 
 export const PromptInputBar: React.FC<PromptInputBarProps> = ({
   initialPrompt = '',
-  activeContextDoc = 'NextJS_14...pdf',
+  activeContextDoc = null,
   onSendPrompt,
   onAttachFile,
+  onRemoveContext,
   className = '',
 }) => {
   const [prompt, setPrompt] = useState(initialPrompt);
   const [contextDoc, setContextDoc] = useState<string | null>(activeContextDoc);
   const [isRecording, setIsRecording] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    setContextDoc(activeContextDoc ?? null);
+  }, [activeContextDoc]);
 
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -61,7 +67,10 @@ export const PromptInputBar: React.FC<PromptInputBarProps> = ({
               <span className="text-on-surface-variant max-w-[120px] truncate">{contextDoc}</span>
               <button
                 type="button"
-                onClick={() => setContextDoc(null)}
+                onClick={() => {
+                  setContextDoc(null);
+                  onRemoveContext?.();
+                }}
                 className="hover:text-on-surface cursor-pointer"
                 title="Bỏ ngữ cảnh tệp này"
               >

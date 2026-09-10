@@ -9,6 +9,7 @@ interface AiResponseCardProps {
   vectorSimilarity: string;
   executiveSummary: string;
   stats: MetricStat[];
+  isLoading?: boolean;
   onCopy?: () => void;
   onPin?: () => void;
   onShare?: () => void;
@@ -19,6 +20,7 @@ export const AiResponseCard: React.FC<AiResponseCardProps> = ({
   vectorSimilarity,
   executiveSummary,
   stats,
+  isLoading = false,
   onCopy,
   onPin,
   onShare,
@@ -81,14 +83,17 @@ export const AiResponseCard: React.FC<AiResponseCardProps> = ({
         <h4 className="font-label-mono text-label-mono text-primary uppercase tracking-widest mb-1.5">
           Tóm lược kỹ thuật (Executive Summary)
         </h4>
-        <p className="font-body-lg text-body-lg text-on-surface leading-relaxed">
-          Theo tài liệu tài liệu chỉ mục trang 14–22, điểm khác biệt mang tính cách mạng của{' '}
-          <span className="text-secondary font-semibold">React Server Components (RSC)</span> so với
-          SSR truyền thống là:{' '}
-          <strong>RSC không bao giờ chuyển code JavaScript của server components về phía client</strong>.
-          Toàn bộ quá trình render component tree được mã hóa dưới dạng stream JSON-like payload (RSC wire
-          format), giúp kích thước bundle client tiệm cận mức tối thiểu.
-        </p>
+        {isLoading ? (
+          <div className="space-y-3 py-2 animate-pulse">
+            <div className="h-4 bg-primary/20 rounded-full w-3/4"></div>
+            <div className="h-4 bg-primary/10 rounded-full w-full"></div>
+            <div className="h-4 bg-primary/10 rounded-full w-5/6"></div>
+          </div>
+        ) : (
+          <div className="font-body-lg text-body-lg text-on-surface leading-relaxed whitespace-pre-wrap">
+            {executiveSummary}
+          </div>
+        )}
       </div>
 
       {/* Micro Stats Strip Apple Style */}
