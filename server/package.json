@@ -11,12 +11,15 @@
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.64",
+    "@langchain/textsplitters": "^1.0.1",
     "ai": "^7.0.93",
     "axios": "^1.20.0",
     "cheerio": "^1.2.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "google-auth-library": "^11.0.2",
+    "jsonwebtoken": "^9.0.3",
     "langchain": "^1.5.10",
     "mammoth": "^1.12.2",
     "mongodb": "^7.6.0",
@@ -26,6 +29,7 @@
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.2.0",
     "@types/node": "^26.5.0",
     "ts-node-dev": "^2.0.0",

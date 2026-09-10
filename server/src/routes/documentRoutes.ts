@@ -5,6 +5,8 @@ import {
   crawlDocumentHandler,
   getAllDocumentsHandler,
   getDocumentByIdHandler,
+  processDocumentHandler,
+  getDocumentChunksHandler,
 } from '../controllers/documentController.js';
 
 const router = Router();
@@ -20,5 +22,11 @@ router.get('/', getAllDocumentsHandler);
 
 // GET /api/documents/:id - Xem chi tiết tài liệu (kèm rawText)
 router.get('/:id', getDocumentByIdHandler);
+
+// POST /api/documents/:id/process - Kích hoạt cắt chunk và tạo embedding
+router.post('/:id/process', processDocumentHandler);
+
+// GET /api/documents/:id/chunks - Xem danh sách các chunk đã tạo của tài liệu
+router.get('/:id/chunks', getDocumentChunksHandler);
 
 export default router;

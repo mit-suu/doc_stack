@@ -5,6 +5,9 @@ import { connectDB } from './config/db.js';
 import './config/ai.js';
 
 import documentRoutes from './routes/documentRoutes.js';
+import retrievalRoutes from './routes/retrievalRoutes.js';
+import chatRoutes from './routes/chatRoutes.js';
+import authRoutes from './routes/authRoutes.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -27,7 +30,21 @@ app.get('/api/health', (_req: Request, res: Response) => {
   });
 });
 
+app.use('/api/auth', authRoutes);
 app.use('/api/documents', documentRoutes);
+app.use('/api/retrieve', retrievalRoutes);
+app.use('/api/chat', chatRoutes);
+
+// Global Error Handler Middleware
+app.use((err: any, _req: Request, res: Response, _next: any) => {
+  if (err instanceof SyntaxError && 'body' in err) {
+    res.status(400).json({ error: 'Cú pháp JSON trong request body không hợp lệ' });
+    return;
+  }
+  res.status(err.status || err.statusCode || 500).json({
+    error: err.message || 'Lỗi hệ thống máy chủ',
+  });
+});
 
 async function startServer() {
   await connectDB();

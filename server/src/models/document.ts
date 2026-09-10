@@ -2,7 +2,7 @@ import { ObjectId } from 'mongodb';
 
 export type SourceType = 'file' | 'url';
 export type FileType = 'pdf' | 'docx' | 'md' | 'txt';
-export type DocumentStatus = 'pending' | 'processing' | 'ready' | 'failed';
+export type DocumentStatus = 'pending' | 'processing' | 'ready' | 'embedded' | 'failed';
 
 export interface Document {
   _id?: ObjectId;

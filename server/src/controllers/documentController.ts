@@ -10,6 +10,8 @@ import {
 } from '../repositories/documentRepository.js';
 import { parseByFileType } from '../services/documentParser.js';
 import { crawlUrl, isPrivateOrBlockedHost } from '../services/urlCrawler.js';
+import { processDocument } from '../services/documentProcessor.js';
+import { getChunkSummariesByDocumentId } from '../repositories/chunkRepository.js';
 import { FileType } from '../models/document.js';
 
 const ALLOWED_EXTENSIONS: Record<string, FileType> = {
@@ -90,11 +92,19 @@ export async function uploadDocumentHandler(req: Request, res: Response): Promis
     // 2. Parse text theo định dạng
     try {
       const rawText = await parseByFileType(req.file.buffer, fileType);
-      const readyDoc = await updateDocument(createdDoc._id!, {
+      await updateDocument(createdDoc._id!, {
         rawText,
         status: 'ready',
       });
-      res.status(201).json(readyDoc);
+
+      // Tự động kích hoạt chunking & embedding
+      try {
+        const embeddedDoc = await processDocument(createdDoc._id!.toString());
+        res.status(201).json(embeddedDoc);
+      } catch {
+        const currentDoc = await getDocumentById(createdDoc._id!);
+        res.status(201).json(currentDoc);
+      }
     } catch (parseErr: any) {
       const failedDoc = await updateDocument(createdDoc._id!, {
         status: 'failed',
@@ -151,12 +161,20 @@ export async function crawlDocumentHandler(req: Request, res: Response): Promise
     // 2. Crawl nội dung trang web
     try {
       const { title, content } = await crawlUrl(trimmedUrl);
-      const readyDoc = await updateDocument(createdDoc._id!, {
+      await updateDocument(createdDoc._id!, {
         title: title || trimmedUrl,
         rawText: content,
         status: 'ready',
       });
-      res.status(201).json(readyDoc);
+
+      // Tự động kích hoạt chunking & embedding
+      try {
+        const embeddedDoc = await processDocument(createdDoc._id!.toString());
+        res.status(201).json(embeddedDoc);
+      } catch {
+        const currentDoc = await getDocumentById(createdDoc._id!);
+        res.status(201).json(currentDoc);
+      }
     } catch (crawlErr: any) {
       if (crawlErr.message === 'URL không được phép truy cập') {
         res.status(400).json({ error: 'URL không được phép truy cập' });
@@ -211,3 +229,57 @@ export async function getDocumentByIdHandler(req: Request, res: Response): Promi
     res.status(500).json({ error: error.message || 'Lỗi server khi truy xuất tài liệu' });
   }
 }
+
+/**
+ * POST /api/documents/:id/process
+ * Kích hoạt cắt chunk và tạo embedding cho document
+ */
+export async function processDocumentHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+
+    if (!id || !ObjectId.isValid(id)) {
+      res.status(400).json({ error: 'ID tài liệu không hợp lệ (phải là 24 ký tự hex)' });
+      return;
+    }
+
+    const updatedDoc = await processDocument(id);
+    res.status(200).json(updatedDoc);
+  } catch (error: any) {
+    const status = error.statusCode || 500;
+    res.status(status).json({
+      error: error.message || 'Lỗi server khi xử lý embedding tài liệu',
+    });
+  }
+}
+
+/**
+ * GET /api/documents/:id/chunks
+ * Lấy danh sách các chunk đã tạo của 1 document (kèm độ dài vector embedding để kiểm tra)
+ */
+export async function getDocumentChunksHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+
+    if (!id || !ObjectId.isValid(id)) {
+      res.status(400).json({ error: 'ID tài liệu không hợp lệ (phải là 24 ký tự hex)' });
+      return;
+    }
+
+    const doc = await getDocumentById(id);
+    if (!doc) {
+      res.status(404).json({ error: 'Không tìm thấy tài liệu với ID đã cung cấp' });
+      return;
+    }
+
+    const chunks = await getChunkSummariesByDocumentId(id);
+    res.status(200).json(chunks);
+  } catch (error: any) {
+    res.status(500).json({
+      error: error.message || 'Lỗi server khi lấy danh sách chunks của tài liệu',
+    });
+  }
+}
+
