@@ -8,6 +8,7 @@ import documentRoutes from './routes/documentRoutes.js';
 import retrievalRoutes from './routes/retrievalRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
 import authRoutes from './routes/authRoutes.js';
+import sessionRoutes from './routes/sessionRoutes.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -34,6 +35,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/retrieve', retrievalRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/sessions', sessionRoutes);
 
 // Global Error Handler Middleware
 app.use((err: any, _req: Request, res: Response, _next: any) => {

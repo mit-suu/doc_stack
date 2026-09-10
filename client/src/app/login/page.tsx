@@ -14,7 +14,7 @@ declare global {
 }
 
 export default function LoginPage() {
-  const { isAuthenticated, isLoading, loginWithGoogle, setSession } = useAuth();
+  const { isAuthenticated, isLoading, loginWithGoogle } = useAuth();
   const router = useRouter();
   const [logoError, setLogoError] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -92,7 +92,7 @@ export default function LoginPage() {
 
     if (!googleClientId) {
       setErrorMessage(
-        'Chưa cấu hình NEXT_PUBLIC_GOOGLE_CLIENT_ID trong client/.env.local. Bạn có thể sử dụng nút "Đăng nhập nhanh Test Account" bên dưới để trải nghiệm ngay.'
+        'Chưa cấu hình NEXT_PUBLIC_GOOGLE_CLIENT_ID trong client/.env.local. Vui lòng bổ sung Client ID để đăng nhập với Google.'
       );
       return;
     }
@@ -141,28 +141,6 @@ export default function LoginPage() {
       } else {
         setErrorMessage('Google Sign-in SDK chưa sẵn sàng, vui lòng thử lại sau giây lát.');
       }
-    }
-  };
-
-  // Nút đăng nhập thử nghiệm (dành cho môi trường dev khi chưa có Google Client ID thật)
-  const handleQuickDemoLogin = async () => {
-    setIsSigningIn(true);
-    try {
-      // Gửi mock test credential qua endpoint hoặc tạo session trực tiếp
-      const mockUser = {
-        id: 'dev_user_' + Date.now(),
-        googleId: 'google_oauth_1092837465',
-        email: 'engineer@docstack.io',
-        name: 'Kỹ sư DocStack',
-        picture: 'https://api.dicebear.com/7.x/avataaars/svg?seed=DocStackEngineer',
-        createdAt: new Date().toISOString(),
-        lastLoginAt: new Date().toISOString(),
-      };
-      setSession('mock_access_token_docstack_' + Date.now(), mockUser);
-      router.push('/home');
-    } catch (e: any) {
-      setErrorMessage(e.message);
-      setIsSigningIn(false);
     }
   };
 
@@ -269,26 +247,6 @@ export default function LoginPage() {
           </span>
         </button>
 
-        {/* Demo Fast-Login Option for quick testing */}
-        <div className="w-full mt-4">
-          <div className="flex items-center gap-2 my-3">
-            <div className="h-[1px] bg-black/[0.08] dark:bg-white/[0.08] flex-1" />
-            <span className="font-label-mono text-[11px] text-outline uppercase tracking-wider">
-              Chế độ thử nghiệm
-            </span>
-            <div className="h-[1px] bg-black/[0.08] dark:bg-white/[0.08] flex-1" />
-          </div>
-
-          <button
-            id="quick-demo-login-btn"
-            onClick={handleQuickDemoLogin}
-            disabled={isSigningIn}
-            className="w-full py-2.5 px-4 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 font-label-md text-body-sm transition-colors cursor-pointer flex items-center justify-center gap-2"
-          >
-            <Icon name="bolt" className="text-[16px]" />
-            <span>Đăng nhập nhanh Test Account</span>
-          </button>
-        </div>
 
         {/* Security & Access Token Badges */}
         <div className="mt-8 pt-6 border-t border-black/[0.06] dark:border-white/[0.06] w-full flex flex-col items-center gap-2">

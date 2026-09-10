@@ -20,7 +20,6 @@ import { SettingsModal } from '../../components/ui/SettingsModal';
 import {
   mockWorkspace,
   mockSlashPrompts,
-  mockRecentSessions,
   mockUserQuery,
   mockAiAnalysis,
 } from '../../mock/homeData';
@@ -31,8 +30,26 @@ import {
   fetchDocuments,
   uploadDocument,
   sendChatMessage,
+  fetchSessions,
+  fetchSessionDetail,
+  deleteSession as apiDeleteSession,
   BackendDocument,
 } from '../../services/api';
+
+function formatRelativeTime(dateStr: string): string {
+  if (!dateStr) return 'Vừa xong';
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  if (diffMins < 1) return 'Vừa xong';
+  if (diffMins < 60) return `${diffMins} phút`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours} giờ`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays === 1) return 'Hôm qua';
+  return `${diffDays} ngày`;
+}
 
 export default function HomePage() {
   const { user, isAuthenticated, isLoading } = useAuth();
@@ -46,7 +63,8 @@ export default function HomePage() {
   });
   const [selectedDoc, setSelectedDoc] = useState<IndexedDocument | null>(null);
   const [slashPrompts] = useState(mockSlashPrompts);
-  const [recentSessions] = useState(mockRecentSessions);
+  const [recentSessions, setRecentSessions] = useState<RecentSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [userQuery, setUserQuery] = useState<UserQueryMessage>(mockUserQuery);
   const [aiAnalysis, setAiAnalysis] = useState<AiAnalysisData>(mockAiAnalysis);
   const [notification, setNotification] = useState<string | null>(null);
@@ -107,18 +125,122 @@ export default function HomePage() {
     }
   }, []);
 
-  // Tải danh sách tài liệu ban đầu từ Backend
+  const loadUserSessions = useCallback(async () => {
+    try {
+      const backendSessions = await fetchSessions();
+      if (backendSessions && Array.isArray(backendSessions)) {
+        const mapped: RecentSession[] = backendSessions.map((s) => ({
+          id: s.id,
+          title: s.title,
+          preview: s.lastMessage || 'Chưa có tin nhắn...',
+          timeAgo: formatRelativeTime(s.updatedAt || s.createdAt),
+        }));
+        setRecentSessions(mapped);
+      }
+    } catch (err: any) {
+      console.warn('[DocStack] Lỗi tải danh sách phiên của user:', err.message);
+    }
+  }, []);
+
+  // Tải danh sách tài liệu và phiên chat ban đầu từ Backend
   useEffect(() => {
     loadDocuments();
   }, [loadDocuments]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadUserSessions();
+    }
+  }, [isAuthenticated, loadUserSessions]);
 
   const handleSelectPrompt = (prompt: SlashPrompt) => {
     showToast(`Đã kích hoạt lệnh: ${prompt.command}`);
     handleSendPrompt(prompt.description);
   };
 
-  const handleSelectSession = (session: RecentSession) => {
-    showToast(`Mở phiên làm việc: ${session.title}`);
+  // Chọn một phiên chat để xem lại lịch sử
+  const handleSelectSession = async (session: RecentSession) => {
+    setActiveSessionId(session.id);
+    showToast(`Đang mở phiên: ${session.title}...`);
+    try {
+      const detail = await fetchSessionDetail(session.id);
+      if (detail && detail.messages && detail.messages.length > 0) {
+        const userMsgs = detail.messages.filter((m) => m.role === 'user');
+        const aiMsgs = detail.messages.filter((m) => m.role === 'assistant');
+
+        const lastUser = userMsgs[userMsgs.length - 1];
+        const lastAi = aiMsgs[aiMsgs.length - 1];
+
+        if (lastUser) {
+          setUserQuery({
+            id: lastUser.id,
+            author: user?.name ? `${user.name} (Kỹ sư)` : 'Bạn (Kỹ sư hệ thống)',
+            avatarLetter: user?.name ? user.name.charAt(0).toUpperCase() : 'U',
+            time: new Date(lastUser.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+            queryText: lastUser.content,
+            attachedDoc: selectedDoc ? selectedDoc.name : 'Toàn bộ kho tài liệu',
+            model: 'gemini-3.6-flash',
+          });
+        }
+
+        if (lastAi) {
+          const mappedCitations: Citation[] = (lastAi.citations || []).map((c, idx) => ({
+            id: `cite-${idx}`,
+            sourceFile: c.originalName || c.title || 'Tài liệu',
+            reference: `Chunk #${c.chunkIndex + 1} (${(c.score * 100).toFixed(1)}%)`,
+            quote: c.snippet,
+            accentColor: idx % 2 === 0 ? 'secondary' : 'tertiary',
+          }));
+
+          setAiAnalysis((prev) => ({
+            ...prev,
+            title: 'DocStack RAG Assistant',
+            vectorSimilarity: mappedCitations.length > 0 ? `${(lastAi.citations![0].score * 100).toFixed(1)}%` : '96.0%',
+            executiveSummary: lastAi.content,
+            citations: mappedCitations,
+          }));
+        }
+      }
+    } catch (err: any) {
+      showToast(`❌ Không thể tải chi tiết phiên: ${err.message}`);
+    }
+  };
+
+  // Bắt đầu một phiên chat mới độc lập
+  const handleNewSession = () => {
+    setActiveSessionId(null);
+    setUserQuery({
+      id: `new-${Date.now()}`,
+      author: user?.name ? `${user.name} (Kỹ sư)` : 'Bạn (Kỹ sư hệ thống)',
+      avatarLetter: user?.name ? user.name.charAt(0).toUpperCase() : 'U',
+      time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+      queryText: 'Hãy đặt câu hỏi mới cho DocStack AI...',
+      attachedDoc: selectedDoc ? selectedDoc.name : 'Toàn bộ kho tài liệu',
+      model: 'gemini-3.6-flash',
+    });
+    setAiAnalysis((prev) => ({
+      ...prev,
+      title: 'DocStack AI Sẵn Sàng',
+      vectorSimilarity: '100%',
+      executiveSummary: 'Chào bạn! Đây là phiên làm việc mới của riêng bạn. Hãy nhập câu hỏi kỹ thuật bên dưới để AI tìm kiếm vector từ tài liệu và giải đáp chi tiết.',
+      citations: [],
+    }));
+    showToast('Đã bắt đầu phiên trò chuyện mới');
+  };
+
+  // Xóa một phiên chat
+  const handleDeleteSession = async (sessionId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await apiDeleteSession(sessionId);
+      showToast('Đã xóa phiên làm việc');
+      if (activeSessionId === sessionId) {
+        handleNewSession();
+      }
+      await loadUserSessions();
+    } catch (err: any) {
+      showToast(`❌ Lỗi xóa phiên: ${err.message}`);
+    }
   };
 
   const handleSelectDocument = (doc: IndexedDocument) => {
@@ -153,7 +275,14 @@ export default function HomePage() {
     showToast('AI đang tìm kiếm vector và sinh câu trả lời...');
 
     try {
-      const res = await sendChatMessage(text, selectedDoc?.id);
+      const res = await sendChatMessage(text, activeSessionId || undefined, selectedDoc?.id);
+
+      if (res.sessionId) {
+        setActiveSessionId(res.sessionId);
+      }
+
+      // Tải lại danh sách phiên để cập nhật tiêu đề và tin nhắn mới nhất
+      await loadUserSessions();
 
       const mappedCitations: Citation[] = (res.citations || []).map((c, idx) => ({
         id: `cite-${idx}`,
@@ -281,7 +410,10 @@ export default function HomePage() {
               />
               <RecentSessions
                 sessions={recentSessions}
+                activeSessionId={activeSessionId}
                 onSelectSession={handleSelectSession}
+                onNewSession={handleNewSession}
+                onDeleteSession={handleDeleteSession}
               />
             </aside>
 
