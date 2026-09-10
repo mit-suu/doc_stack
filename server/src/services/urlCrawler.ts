@@ -146,7 +146,11 @@ export async function crawlUrl(url: string): Promise<CrawlResult> {
     parsedUrl.hostname + parsedUrl.pathname;
 
   // 5. Loại bỏ các thẻ rác, không liên quan đến nội dung bài viết
-  $('nav, footer, script, style, aside, noscript, iframe, svg, header, form').remove();
+  $(
+    'nav, footer, script, style, aside, noscript, iframe, svg, header, form, ' +
+    'button, [role="button"], [aria-label*="copy" i], [aria-label*="feedback" i], ' +
+    '.feedback, .feedback-widget, .breadcrumbs, .breadcrumb, .toc, .table-of-contents, .theme-edit-this-page'
+  ).remove();
 
   // 6. Ưu tiên lấy vùng nội dung chính: <article> -> <main> -> <body>
   const article = $('article');
@@ -155,11 +159,51 @@ export async function crawlUrl(url: string): Promise<CrawlResult> {
 
   const rawText = container.text() || '';
 
-  // 7. Làm sạch text: loại bỏ khoảng trắng thừa, thu gọn các dòng trống liên tiếp
-  const lines = rawText
+  // 7. Loại bỏ các cụm từ UI rác phổ biến trong trang tài liệu kỹ thuật
+  const uiGarbagePatterns = [
+    /This page is also available as Markdown:[^\n]+?(\/docs\/llms\.txt|\.md)?[^\n]*/gi,
+    /Was this page's content helpful\??/gi,
+    /Was this helpful\??/gi,
+    /Edit this page on GitHub/gi,
+    /Edit this page/gi,
+    /Scroll to top/gi,
+    /View source\s*or\s*report an issue\.?/gi,
+    /\bthumb_up\b/gi,
+    /\bthumb_down\b/gi,
+    /\bCopy page\b/gi,
+    /\bCopy code\b/gi,
+    /\bOn this page\b/gi,
+    /Previous\s*[A-Z][a-zA-Z0-9\s:-]*Next\s*[A-Z][a-zA-Z0-9\s:-]*/g,
+  ];
+
+  let filteredText = rawText;
+  for (const pattern of uiGarbagePatterns) {
+    filteredText = filteredText.replace(pattern, ' ');
+  }
+
+  // 8. Làm sạch text: loại bỏ khoảng trắng thừa, thu gọn các dòng trống liên tiếp
+  const lines = filteredText
     .split('\n')
     .map((line) => line.replace(/\s+/g, ' ').trim())
-    .filter((line) => line.length > 0);
+    .filter((line) => {
+      if (line.length === 0) return false;
+      const lower = line.toLowerCase();
+      // Loại bỏ các dòng độc lập chỉ chứa các nhãn UI
+      if (
+        lower === 'copy' ||
+        lower === 'copy page' ||
+        lower === 'copy code' ||
+        lower === 'on this page' ||
+        lower === 'thumb_up' ||
+        lower === 'thumb_down' ||
+        lower === 'scroll to top' ||
+        lower === 'was this helpful?' ||
+        lower === 'was this page\'s content helpful?'
+      ) {
+        return false;
+      }
+      return true;
+    });
 
   const cleanContent = lines.join('\n\n');
 
@@ -172,3 +216,4 @@ export async function crawlUrl(url: string): Promise<CrawlResult> {
     content: cleanContent,
   };
 }
+

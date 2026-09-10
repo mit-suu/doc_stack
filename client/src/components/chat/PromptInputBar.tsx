@@ -10,6 +10,7 @@ interface PromptInputBarProps {
   onAttachFile?: () => void;
   onRemoveContext?: () => void;
   className?: string;
+  isLoading?: boolean;
 }
 
 export const PromptInputBar: React.FC<PromptInputBarProps> = ({
@@ -19,6 +20,7 @@ export const PromptInputBar: React.FC<PromptInputBarProps> = ({
   onAttachFile,
   onRemoveContext,
   className = '',
+  isLoading = false,
 }) => {
   const [prompt, setPrompt] = useState(initialPrompt);
   const [contextDoc, setContextDoc] = useState<string | null>(activeContextDoc);
@@ -113,10 +115,18 @@ export const PromptInputBar: React.FC<PromptInputBarProps> = ({
           {/* Send Button with Glow */}
           <button
             type="submit"
-            className="w-10 h-10 rounded-full bg-primary-container hover:bg-primary text-white flex items-center justify-center shadow-[0_0_16px_rgba(79,70,229,0.5)] transition-all transform active:scale-95 shrink-0 cursor-pointer"
-            title="Gửi câu hỏi"
+            disabled={isLoading}
+            className={`w-10 h-10 rounded-full flex items-center justify-center shadow-[0_0_16px_rgba(79,70,229,0.5)] transition-all transform active:scale-95 shrink-0 cursor-pointer ${
+              isLoading
+                ? 'bg-primary/50 text-white cursor-not-allowed'
+                : 'bg-primary-container hover:bg-primary text-white'
+            }`}
+            title={isLoading ? 'AI đang sinh phản hồi...' : 'Gửi câu hỏi'}
           >
-            <Icon name="arrow_upward" className="text-[18px]" />
+            <Icon
+              name={isLoading ? 'sync' : 'arrow_upward'}
+              className={`text-[18px] ${isLoading ? 'animate-spin' : ''}`}
+            />
           </button>
         </div>
       </form>

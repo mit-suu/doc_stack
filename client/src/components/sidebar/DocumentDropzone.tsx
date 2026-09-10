@@ -38,10 +38,10 @@ export const DocumentDropzone: React.FC<DocumentDropzoneProps> = ({ onFileSelect
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`border border-dashed rounded-2xl p-space-md text-center transition-all cursor-pointer group ${
+      className={`border border-dashed rounded-lg px-3 py-2 text-center transition-all cursor-pointer group flex items-center justify-center gap-2 ${
         isDragOver
-          ? 'border-primary bg-primary/10 scale-[1.01]'
-          : 'border-black/[0.14] dark:border-white/[0.14] bg-black/[0.01] dark:bg-white/[0.01] hover:bg-black/[0.04] dark:hover:bg-white/[0.04] hover:border-black/[0.24] dark:hover:border-white/[0.24]'
+          ? 'border-primary bg-primary/10'
+          : 'border-black/[0.12] dark:border-white/[0.12] hover:bg-black/[0.03] dark:hover:bg-white/[0.03] hover:border-primary/40'
       }`}
     >
       <input
@@ -53,15 +53,12 @@ export const DocumentDropzone: React.FC<DocumentDropzoneProps> = ({ onFileSelect
         onChange={(e) => onFileSelect?.(e.target.files)}
       />
       <Icon
-        name="cloud_upload"
-        className="text-outline-variant group-hover:text-primary transition-colors text-[24px]"
+        name="add"
+        className="text-outline-variant group-hover:text-primary transition-colors text-[16px]"
       />
-      <p className="font-label-md text-label-md text-on-surface mt-1">
-        Kéo thả tài liệu PDF, DOCX, MD
-      </p>
-      <p className="font-body-sm text-body-sm text-outline">
-        hoặc nhấp để chọn tệp từ máy
-      </p>
+      <span className="text-[11px] font-medium text-outline group-hover:text-on-surface-variant transition-colors">
+        Thêm nguồn tài liệu
+      </span>
     </div>
   );
 };

@@ -1,6 +1,7 @@
 import 'dotenv/config';
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import morgan from 'morgan';
 import { connectDB } from './config/db.js';
 import './config/ai.js';
 
@@ -9,10 +10,15 @@ import retrievalRoutes from './routes/retrievalRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import sessionRoutes from './routes/sessionRoutes.js';
+import conversationRoutes from './routes/conversationRoutes.js';
+import presetRoutes from './routes/presetRoutes.js';
 import { healthCheckHandler } from './controllers/healthController.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+// HTTP Request Logger dạng dev
+app.use(morgan('dev'));
 
 // Danh sách các domain được phép gọi API (CORS)
 const defaultAllowedOrigins = [
@@ -62,15 +68,17 @@ app.use('/api/documents', documentRoutes);
 app.use('/api/retrieve', retrievalRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/sessions', sessionRoutes);
+app.use('/api/conversations', conversationRoutes);
+app.use('/api/presets', presetRoutes);
 
 // Global Error Handler Middleware
-app.use((err: any, _req: Request, res: Response, _next: any) => {
+app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   if (err instanceof SyntaxError && 'body' in err) {
-    res.status(400).json({ error: 'Cú pháp JSON trong request body không hợp lệ' });
-    return;
+    return res.status(400).json({ error: 'Cú pháp JSON trong request body không hợp lệ' });
   }
-  res.status(err.status || err.statusCode || 500).json({
-    error: err.message || 'Lỗi hệ thống máy chủ',
+  console.error('[Global Error Middleware]', err);
+  return res.status(err.status || err.statusCode || 500).json({
+    error: err.message || 'Lỗi hệ thống',
   });
 });
 

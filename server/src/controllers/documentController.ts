@@ -68,7 +68,14 @@ export async function uploadDocumentHandler(req: Request, res: Response): Promis
       return;
     }
 
-    const originalName = req.file.originalname;
+    // Chuẩn hoá tên file tiếng Việt tránh lỗi encoding (latin1 -> utf8)
+    let originalName = req.file.originalname;
+    try {
+      originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+    } catch {
+      originalName = req.file.originalname;
+    }
+
     const ext = path.extname(originalName).toLowerCase().replace('.', '');
     const fileType = ALLOWED_EXTENSIONS[ext];
 
@@ -101,11 +108,13 @@ export async function uploadDocumentHandler(req: Request, res: Response): Promis
       try {
         const embeddedDoc = await processDocument(createdDoc._id!.toString());
         res.status(201).json(embeddedDoc);
-      } catch {
+      } catch (embedErr: any) {
+        console.error(`[Upload Document] ⚠️ Lỗi tự động embedding document ${createdDoc._id}:`, embedErr.message);
         const currentDoc = await getDocumentById(createdDoc._id!);
         res.status(201).json(currentDoc);
       }
     } catch (parseErr: any) {
+      console.error(`[Upload Document] ❌ Lỗi trích xuất text từ file ${originalName}:`, parseErr.message);
       const failedDoc = await updateDocument(createdDoc._id!, {
         status: 'failed',
         errorMessage: parseErr.message || 'Lỗi khi trích xuất text từ file',
@@ -113,6 +122,7 @@ export async function uploadDocumentHandler(req: Request, res: Response): Promis
       res.status(201).json(failedDoc);
     }
   } catch (error: any) {
+    console.error('[Upload Document] ❌ Lỗi server khi upload tài liệu:', error);
     res.status(500).json({ error: error.message || 'Lỗi server khi upload tài liệu' });
   }
 }
@@ -171,11 +181,13 @@ export async function crawlDocumentHandler(req: Request, res: Response): Promise
       try {
         const embeddedDoc = await processDocument(createdDoc._id!.toString());
         res.status(201).json(embeddedDoc);
-      } catch {
+      } catch (embedErr: any) {
+        console.error(`[Crawl Document] ⚠️ Lỗi tự động embedding document ${createdDoc._id}:`, embedErr.message);
         const currentDoc = await getDocumentById(createdDoc._id!);
         res.status(201).json(currentDoc);
       }
     } catch (crawlErr: any) {
+      console.error(`[Crawl Document] ❌ Lỗi crawl URL ${trimmedUrl}:`, crawlErr.message);
       if (crawlErr.message === 'URL không được phép truy cập') {
         res.status(400).json({ error: 'URL không được phép truy cập' });
         return;
@@ -187,6 +199,7 @@ export async function crawlDocumentHandler(req: Request, res: Response): Promise
       res.status(201).json(failedDoc);
     }
   } catch (error: any) {
+    console.error('[Crawl Document] ❌ Lỗi server khi crawl URL:', error);
     res.status(500).json({ error: error.message || 'Lỗi server khi crawl URL' });
   }
 }
@@ -200,6 +213,7 @@ export async function getAllDocumentsHandler(_req: Request, res: Response): Prom
     const documents = await getAllDocuments();
     res.status(200).json(documents);
   } catch (error: any) {
+    console.error('[Get All Documents] ❌ Lỗi server khi lấy danh sách tài liệu:', error);
     res.status(500).json({ error: error.message || 'Lỗi server khi lấy danh sách tài liệu' });
   }
 }
@@ -226,6 +240,7 @@ export async function getDocumentByIdHandler(req: Request, res: Response): Promi
 
     res.status(200).json(document);
   } catch (error: any) {
+    console.error(`[Get Document By Id] ❌ Lỗi khi lấy tài liệu ${req.params.id}:`, error);
     res.status(500).json({ error: error.message || 'Lỗi server khi truy xuất tài liệu' });
   }
 }
@@ -247,6 +262,7 @@ export async function processDocumentHandler(req: Request, res: Response): Promi
     const updatedDoc = await processDocument(id);
     res.status(200).json(updatedDoc);
   } catch (error: any) {
+    console.error(`[Process Document] ❌ Lỗi xử lý embedding cho tài liệu ${req.params.id}:`, error);
     const status = error.statusCode || 500;
     res.status(status).json({
       error: error.message || 'Lỗi server khi xử lý embedding tài liệu',
@@ -277,6 +293,7 @@ export async function getDocumentChunksHandler(req: Request, res: Response): Pro
     const chunks = await getChunkSummariesByDocumentId(id);
     res.status(200).json(chunks);
   } catch (error: any) {
+    console.error(`[Get Document Chunks] ❌ Lỗi khi lấy chunks của tài liệu ${req.params.id}:`, error);
     res.status(500).json({
       error: error.message || 'Lỗi server khi lấy danh sách chunks của tài liệu',
     });

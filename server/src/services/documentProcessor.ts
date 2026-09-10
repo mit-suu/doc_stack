@@ -5,11 +5,13 @@ import { chunkText } from './textChunker.js';
 import { generateEmbeddings } from './embeddingService.js';
 import { Document } from '../models/document.js';
 import { DocumentChunk } from '../models/chunk.js';
+import { aiLogger } from '../utils/aiLogger.js';
 
 /**
  * Service điều phối toàn bộ luồng cắt chunk và tạo embedding cho 1 document
  */
 export async function processDocument(documentId: string): Promise<Document> {
+  const t0 = Date.now();
   if (!documentId || !ObjectId.isValid(documentId)) {
     const err: any = new Error('ID tài liệu không hợp lệ (phải là 24 ký tự hex)');
     err.statusCode = 400;
@@ -89,12 +91,23 @@ export async function processDocument(documentId: string): Promise<Document> {
       errorMessage: '',
     });
 
-    console.log(
-      `[DocumentProcessor] ✅ Đã hoàn tất embedding cho document "${doc.title}" (${chunkEntities.length} chunks)`
-    );
+    aiLogger.document({
+      title: doc.title,
+      docId: doc._id!.toString(),
+      chunksCount: chunkEntities.length,
+      durationMs: Date.now() - t0,
+    });
 
     return updatedDoc!;
   } catch (processError: any) {
+    aiLogger.document({
+      title: doc.title,
+      docId: doc._id!.toString(),
+      chunksCount: 0,
+      durationMs: Date.now() - t0,
+      error: processError.message,
+    });
+
     console.error(
       `[DocumentProcessor] ❌ Lỗi khi xử lý document ${documentId}:`,
       processError.message

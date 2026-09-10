@@ -17,11 +17,11 @@ export async function retrieveHandler(req: Request, res: Response): Promise<void
     let parsedTopK: number = 5;
     if (topK !== undefined) {
       const num = Number(topK);
-      if (isNaN(num) || num <= 0) {
-        res.status(400).json({ error: 'topK phải là số nguyên dương lớn hơn 0' });
+      if (isNaN(num) || !Number.isInteger(num) || num <= 0 || num > 20) {
+        res.status(400).json({ error: 'topK phải là số nguyên dương từ 1 đến 20' });
         return;
       }
-      parsedTopK = Math.min(Math.floor(num), 50); // Giới hạn tối đa 50
+      parsedTopK = num;
     }
 
     const trimmedQuery = query.trim();
@@ -32,6 +32,7 @@ export async function retrieveHandler(req: Request, res: Response): Promise<void
       results,
     });
   } catch (error: any) {
+    console.error('[Retrieve Context] ❌ Lỗi server khi tìm kiếm ngữ cảnh tài liệu:', error);
     const status = error.statusCode || 500;
     res.status(status).json({
       error: error.message || 'Lỗi server khi tìm kiếm ngữ cảnh tài liệu',

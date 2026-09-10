@@ -122,7 +122,11 @@ export default function LoginPage() {
           error_callback: (err: any) => {
             console.warn('[Google OAuth Popup Error]:', err);
             setIsSigningIn(false);
-            if (err?.type !== 'popup_closed') {
+            if (err?.type === 'popup_failed_to_open') {
+              setErrorMessage(
+                'Trình duyệt của bạn đang chặn cửa sổ bật lên (Pop-up Blocked). Vui lòng click vào biểu tượng chặn popup (hình cửa sổ có dấu X) trên thanh địa chỉ URL của trình duyệt để "Luôn cho phép", hoặc dùng nút Google bên dưới.'
+              );
+            } else if (err?.type !== 'popup_closed') {
               setErrorMessage(err?.message || 'Cửa sổ đăng nhập Google đã đóng');
             }
           },
@@ -211,8 +215,10 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* Hidden GSI Container for rendered button if needed */}
-        <div ref={googleBtnContainerRef} className="hidden" />
+        {/* Google GSI Native Button Container */}
+        <div className="w-full flex justify-center mb-3">
+          <div ref={googleBtnContainerRef} className="min-h-[44px]" />
+        </div>
 
         {/* Custom Premium "Continue with Google" Button */}
         <button

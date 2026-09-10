@@ -17,6 +17,8 @@ import { CitationsCard } from '../../components/chat/CitationsCard';
 import { FollowUpPills } from '../../components/chat/FollowUpPills';
 import { PromptInputBar } from '../../components/chat/PromptInputBar';
 import { SettingsModal } from '../../components/ui/SettingsModal';
+import { DocumentPreviewModal } from '../../components/ui/DocumentPreviewModal';
+import { PresetDocsDownloader } from '../../components/sidebar/PresetDocsDownloader';
 import {
   mockWorkspace,
   mockSlashPrompts,
@@ -30,6 +32,7 @@ import {
   fetchDocuments,
   uploadDocument,
   sendChatMessage,
+  streamChatMessage,
   fetchSessions,
   fetchSessionDetail,
   deleteSession as apiDeleteSession,
@@ -43,9 +46,9 @@ function formatRelativeTime(dateStr: string): string {
   const diffMs = now.getTime() - date.getTime();
   const diffMins = Math.floor(diffMs / (1000 * 60));
   if (diffMins < 1) return 'Vừa xong';
-  if (diffMins < 60) return `${diffMins} phút`;
+  if (diffMins < 60) return `${diffMins} phút trước`;
   const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours} giờ`;
+  if (diffHours < 24) return `${diffHours} giờ trước`;
   const diffDays = Math.floor(diffHours / 24);
   if (diffDays === 1) return 'Hôm qua';
   return `${diffDays} ngày`;
@@ -69,7 +72,9 @@ export default function HomePage() {
   const [aiAnalysis, setAiAnalysis] = useState<AiAnalysisData>(mockAiAnalysis);
   const [notification, setNotification] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [previewDocId, setPreviewDocId] = useState<string | null>(null);
   const [isThinking, setIsThinking] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
   // Auth Guard: Chưa đăng nhập sẽ chuyển về /login
@@ -109,15 +114,28 @@ export default function HomePage() {
       const backendDocs = await fetchDocuments();
       if (backendDocs && Array.isArray(backendDocs)) {
         const mapped = backendDocs.map(mapBackendDocToIndexed);
-        setDocuments(mapped);
+        
+        // Lọc trùng lặp tài liệu theo name
+        const seen = new Set<string>();
+        const deduped: IndexedDocument[] = [];
+        for (const doc of mapped) {
+          const key = doc.name.trim().toLowerCase();
+          if (!seen.has(key)) {
+            seen.add(key);
+            deduped.push(doc);
+          }
+        }
+
+        setDocuments(deduped);
         setDocumentStats({
-          totalCount: mapped.length,
-          totalSize: `${(mapped.length * 0.8).toFixed(1)} MB`,
+          totalCount: deduped.length,
+          totalSize: `${(deduped.length * 0.8).toFixed(1)} MB`,
         });
         setWorkspace((prev) => ({
           ...prev,
-          docCount: mapped.length,
-          vectorCount: mapped.length * 15,
+          activeDocumentsCount: deduped.length,
+          docCount: deduped.length,
+          vectorCount: deduped.length * 15,
         }));
       }
     } catch (err: any) {
@@ -254,7 +272,15 @@ export default function HomePage() {
   };
 
   const handleOpenCitation = (cite: Citation) => {
-    showToast(`Mở đoạn trích từ: ${cite.sourceFile}`);
+    const matched = documents.find(
+      (d) => d.name === cite.sourceFile || d.id === (cite as any).documentId
+    );
+    if (matched) {
+      setPreviewDocId(matched.id);
+      showToast(`Mở xem trước tài liệu: ${matched.name}`);
+    } else {
+      showToast(`Mở đoạn trích từ: ${cite.sourceFile}`);
+    }
   };
 
   const handleSendPrompt = async (text: string) => {
@@ -272,58 +298,76 @@ export default function HomePage() {
     };
     setUserQuery(userMsg);
     setIsThinking(true);
-    showToast('AI đang tìm kiếm vector và sinh câu trả lời...');
+    setIsStreaming(true);
+
+    // Chuẩn bị khung phân tích của AI sẵn sàng nhận luồng dữ liệu streaming
+    setAiAnalysis((prev) => ({
+      ...prev,
+      title: 'DocStack RAG Assistant',
+      executiveSummary: '',
+      citations: [],
+    }));
 
     try {
-      const res = await sendChatMessage(text, activeSessionId || undefined, selectedDoc?.id);
+      await streamChatMessage(text, activeSessionId || undefined, selectedDoc?.id, {
+        onMetadata: (meta) => {
+          if (meta.sessionId) {
+            setActiveSessionId(meta.sessionId);
+          }
+          if (meta.citations) {
+            const mappedCitations: Citation[] = meta.citations.map((c, idx) => ({
+              id: `cite-${idx}`,
+              sourceFile: c.originalName || c.title || 'Tài liệu',
+              reference: `Chunk #${c.chunkIndex + 1} (${(c.score * 100).toFixed(1)}%)`,
+              quote: c.snippet,
+              accentColor: idx % 2 === 0 ? 'secondary' : 'tertiary',
+            }));
 
-      if (res.sessionId) {
-        setActiveSessionId(res.sessionId);
-      }
+            const topScore =
+              meta.citations && meta.citations.length > 0
+                ? `${(meta.citations[0].score * 100).toFixed(1)}%`
+                : '95.2%';
 
-      // Tải lại danh sách phiên để cập nhật tiêu đề và tin nhắn mới nhất
-      await loadUserSessions();
-
-      const mappedCitations: Citation[] = (res.citations || []).map((c, idx) => ({
-        id: `cite-${idx}`,
-        sourceFile: c.originalName || c.title || 'Tài liệu',
-        reference: `Chunk #${c.chunkIndex + 1} (${(c.score * 100).toFixed(1)}%)`,
-        quote: c.snippet,
-        accentColor: idx % 2 === 0 ? 'secondary' : 'tertiary',
-      }));
-
-      const topScore =
-        res.citations && res.citations.length > 0
-          ? `${(res.citations[0].score * 100).toFixed(1)}%`
-          : '95.2%';
-
-      setAiAnalysis((prev) => ({
-        ...prev,
-        title: 'DocStack RAG Assistant',
-        vectorSimilarity: topScore,
-        executiveSummary: res.answer,
-        citations: mappedCitations,
-        stats: [
-          {
-            label: 'Độ tương đồng Vector',
-            value: topScore,
-            subtext: `${mappedCitations.length} nguồn tham chiếu Atlas`,
-            type: 'tertiary',
-          },
-          {
-            label: 'Mô hình suy luận',
-            value: 'Gemini 3.6',
-            subtext: 'Google DeepMind',
-            type: 'secondary',
-          },
-          {
-            label: 'Atlas Vector Search',
-            value: 'Cosine Index',
-            subtext: '3072 dims (gemini-embedding-001)',
-            type: 'default',
-          },
-        ],
-      }));
+            setAiAnalysis((prev) => ({
+              ...prev,
+              vectorSimilarity: topScore,
+              citations: mappedCitations,
+              stats: [
+                {
+                  label: 'Độ tương đồng Vector',
+                  value: topScore,
+                  subtext: `${mappedCitations.length} nguồn tham chiếu Atlas`,
+                  type: 'tertiary',
+                },
+                {
+                  label: 'Mô hình suy luận',
+                  value: 'Gemini 3.6',
+                  subtext: 'Google DeepMind (Streaming)',
+                  type: 'secondary',
+                },
+                {
+                  label: 'Atlas Vector Search',
+                  value: 'Cosine Index',
+                  subtext: '3072 dims (gemini-embedding-001)',
+                  type: 'default',
+                },
+              ],
+            }));
+          }
+        },
+        onToken: (_token, accumulated) => {
+          setIsThinking(false);
+          setAiAnalysis((prev) => ({
+            ...prev,
+            executiveSummary: accumulated,
+          }));
+        },
+        onComplete: async () => {
+          setIsStreaming(false);
+          setIsThinking(false);
+          await loadUserSessions();
+        },
+      });
     } catch (err: any) {
       showToast(`❌ Lỗi truy vấn: ${err.message}`);
       setAiAnalysis((prev) => ({
@@ -334,6 +378,7 @@ export default function HomePage() {
       }));
     } finally {
       setIsThinking(false);
+      setIsStreaming(false);
     }
   };
 
@@ -381,6 +426,19 @@ export default function HomePage() {
         onClose={() => setIsSettingsOpen(false)}
       />
 
+      {/* Document Content & Chunks Preview Modal */}
+      <DocumentPreviewModal
+        isOpen={!!previewDocId}
+        documentId={previewDocId}
+        onClose={() => setPreviewDocId(null)}
+        isSelectedContext={selectedDoc?.id === previewDocId}
+        onSelectAsContext={(doc) => {
+          setSelectedDoc(doc);
+          setPreviewDocId(null);
+          showToast(`Đã chọn làm ngữ cảnh giới hạn: ${doc.name}`);
+        }}
+      />
+
       {/* Main Body */}
       <main className="flex-1 pt-14 w-full bg-background relative">
         <div className="flex flex-col w-full relative min-h-full pb-32">
@@ -401,8 +459,16 @@ export default function HomePage() {
               <SourcesCard
                 documents={documents}
                 stats={documentStats}
+                selectedDocId={selectedDoc?.id}
                 onSelectDocument={handleSelectDocument}
+                onPreviewDocument={(doc) => setPreviewDocId(doc.id)}
                 onFileSelect={handleFileSelect}
+              />
+              <PresetDocsDownloader
+                onDownloadComplete={async () => {
+                  await loadDocuments();
+                }}
+                showToast={showToast}
               />
               <QuickSlashPrompts
                 prompts={slashPrompts}
@@ -431,6 +497,7 @@ export default function HomePage() {
                   executiveSummary={aiAnalysis.executiveSummary}
                   stats={aiAnalysis.stats}
                   isLoading={isThinking}
+                  isStreaming={isStreaming}
                   onPin={() => showToast('Đã ghim phản hồi này vào danh sách lưu')}
                   onShare={() => showToast('Đã tạo liên kết chia sẻ phản hồi')}
                 />
@@ -476,6 +543,7 @@ export default function HomePage() {
                   onSendPrompt={handleSendPrompt}
                   onRemoveContext={() => setSelectedDoc(null)}
                   onAttachFile={() => showToast('Chọn hoặc kéo thả tệp từ thanh Tài liệu bên trái')}
+                  isLoading={isThinking || isStreaming}
                 />
               </div>
             </div>

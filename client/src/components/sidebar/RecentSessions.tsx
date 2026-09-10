@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Icon } from '../ui/Icon';
 import { RecentSession } from '../../types/workspace';
 
@@ -19,90 +19,95 @@ export const RecentSessions: React.FC<RecentSessionsProps> = ({
   onNewSession,
   onDeleteSession,
 }) => {
+  const [isExpanded, setIsExpanded] = useState(true);
+
   return (
-    <div className="p-space-lg rounded-3xl backdrop-blur-xl bg-white/70 dark:bg-white/[0.03] border border-black/[0.08] dark:border-white/[0.08] shadow-[0_12px_32px_rgba(15,23,42,0.06)] dark:shadow-[0_12px_32px_rgba(0,0,0,0.3)]">
-      <div className="flex items-center justify-between mb-space-sm">
-        <div className="flex items-center gap-2">
-          <span className="font-headline-sm text-headline-sm text-on-surface">
+    <div className="rounded-2xl backdrop-blur-xl bg-white/70 dark:bg-white/[0.03] border border-black/[0.08] dark:border-white/[0.08] shadow-[0_8px_24px_rgba(15,23,42,0.05)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.25)] transition-all overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-3.5 py-2.5">
+        <button
+          type="button"
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer"
+        >
+          <Icon name="forum" className="text-violet-400 text-[16px]" />
+          <span className="text-[13px] font-semibold text-on-surface tracking-tight">
             Phiên của bạn
           </span>
-          <span className="font-label-mono text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-semibold">
+          <span className="font-mono text-[10px] px-1.5 py-0.5 rounded-md bg-primary/10 text-primary tabular-nums font-semibold">
             {sessions.length}
           </span>
-        </div>
+          <Icon
+            name={isExpanded ? 'expand_less' : 'expand_more'}
+            className="text-[16px] text-outline"
+          />
+        </button>
 
-        {/* Nút Tạo phiên chat mới */}
         <button
           onClick={onNewSession}
-          className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 text-[11px] font-label-md transition-colors cursor-pointer"
-          title="Bắt đầu phiên trò chuyện mới"
+          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-semibold transition-colors cursor-pointer"
+          title="Phiên mới"
         >
-          <Icon name="add" className="text-[14px]" />
-          <span>Phiên mới</span>
+          <Icon name="add" className="text-[13px]" />
+          <span>Mới</span>
         </button>
       </div>
 
-      <div className="space-y-1.5 max-h-[340px] overflow-y-auto pr-1 custom-scrollbar">
-        {sessions.length === 0 ? (
-          <div className="py-6 px-3 text-center rounded-2xl bg-black/[0.02] dark:bg-white/[0.02] border border-dashed border-outline/20">
-            <Icon name="chat_bubble_outline" className="text-outline text-[24px] mb-1.5 opacity-60" />
-            <p className="text-body-sm text-outline text-[12px]">
-              Chưa có phiên chat nào
-            </p>
-            <p className="text-[11px] text-outline/60 mt-0.5">
-              Gửi câu hỏi để tạo phiên riêng của bạn
-            </p>
-          </div>
-        ) : (
-          sessions.map((item) => {
-            const isActive = activeSessionId === item.id;
-            return (
-              <div
-                key={item.id}
-                onClick={() => onSelectSession?.(item)}
-                className={`group relative p-2.5 rounded-2xl transition-all cursor-pointer border ${
-                  isActive
-                    ? 'bg-primary/10 dark:bg-primary/15 border-primary/40 shadow-[0_4px_16px_rgba(79,70,229,0.15)]'
-                    : 'hover:bg-black/[0.04] dark:hover:bg-white/[0.04] border-transparent'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-1.5">
-                  <span
-                    className={`font-label-md text-label-md truncate ${
-                      isActive
-                        ? 'text-primary font-semibold'
-                        : 'text-on-surface group-hover:text-primary transition-colors'
-                    }`}
-                  >
-                    {item.title}
-                  </span>
-
-                  <div className="flex items-center gap-1 shrink-0">
-                    <span className="font-label-mono text-label-mono text-outline text-[10px]">
-                      {item.timeAgo}
-                    </span>
-
-                    {/* Nút xóa phiên */}
-                    {onDeleteSession && (
-                      <button
-                        onClick={(e) => onDeleteSession(item.id, e)}
-                        className="opacity-0 group-hover:opacity-100 p-1 rounded-lg hover:bg-error/15 text-outline hover:text-error transition-all cursor-pointer"
-                        title="Xóa phiên này"
-                      >
-                        <Icon name="delete" className="text-[13px]" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <p className="font-body-sm text-body-sm text-outline truncate mt-0.5">
-                  {item.preview || 'Chưa có tin nhắn...'}
+      {isExpanded && (
+        <div className="px-1.5 pb-2">
+          <div className="space-y-px max-h-[280px] overflow-y-auto px-1">
+            {sessions.length === 0 ? (
+              <div className="py-4 px-3 text-center">
+                <p className="text-[11px] text-outline">
+                  Chưa có phiên chat nào
                 </p>
               </div>
-            );
-          })
-        )}
-      </div>
+            ) : (
+              sessions.map((item) => {
+                const isActive = activeSessionId === item.id;
+                return (
+                  <div
+                    key={item.id}
+                    onClick={() => onSelectSession?.(item)}
+                    className={`group flex items-center justify-between gap-2 px-2.5 py-[7px] rounded-lg transition-all cursor-pointer ${
+                      isActive
+                        ? 'bg-primary/10 dark:bg-primary/15'
+                        : 'hover:bg-black/[0.03] dark:hover:bg-white/[0.04]'
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className={`text-[12px] font-medium truncate leading-[16px] ${
+                        isActive ? 'text-primary' : 'text-on-surface'
+                      }`}>
+                        {item.title}
+                      </p>
+                      <p className="text-[10px] text-outline truncate leading-[14px]">
+                        {item.preview || 'Chưa có tin nhắn...'}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className="font-mono text-[9px] text-outline tabular-nums">
+                        {item.timeAgo}
+                      </span>
+
+                      {onDeleteSession && (
+                        <button
+                          onClick={(e) => onDeleteSession(item.id, e)}
+                          className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-500/15 text-outline hover:text-red-500 transition-all cursor-pointer"
+                          title="Xóa"
+                        >
+                          <Icon name="close" className="text-[12px]" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,5 +1,6 @@
 import { embed, embedMany } from 'ai';
 import { google } from '../config/ai.js';
+import { aiLogger } from '../utils/aiLogger.js';
 
 // Model mặc định khả dụng trên v1beta của Gemini API
 const DEFAULT_EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-001';
@@ -48,18 +49,41 @@ async function retryWithBackoff<T>(
  * Tạo vector embedding cho 1 đoạn text
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
+  const t0 = Date.now();
   const trimmed = text.trim();
   if (!trimmed) {
     throw new Error('Không thể tạo embedding cho văn bản rỗng');
   }
 
-  return await retryWithBackoff(async () => {
-    const { embedding } = await embed({
-      model: google.textEmbeddingModel(DEFAULT_EMBEDDING_MODEL),
-      value: trimmed,
+  try {
+    const result = await retryWithBackoff(async () => {
+      const { embedding } = await embed({
+        model: google.textEmbeddingModel(DEFAULT_EMBEDDING_MODEL),
+        value: trimmed,
+      });
+      return embedding;
     });
-    return embedding;
-  });
+
+    aiLogger.embedding({
+      mode: 'single',
+      count: 1,
+      model: DEFAULT_EMBEDDING_MODEL,
+      durationMs: Date.now() - t0,
+      sampleText: trimmed,
+    });
+
+    return result;
+  } catch (err: any) {
+    aiLogger.embedding({
+      mode: 'single',
+      count: 1,
+      model: DEFAULT_EMBEDDING_MODEL,
+      durationMs: Date.now() - t0,
+      sampleText: trimmed,
+      error: err.message,
+    });
+    throw err;
+  }
 }
 
 /**
@@ -70,27 +94,48 @@ export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
     return [];
   }
 
+  const t0 = Date.now();
   const results: number[][] = [];
 
-  // Chia nhỏ thành các batch để tối ưu tốc độ và không vượt quá giới hạn payload
-  for (let i = 0; i < texts.length; i += BATCH_SIZE) {
-    const batch = texts.slice(i, i + BATCH_SIZE);
+  try {
+    // Chia nhỏ thành các batch để tối ưu tốc độ và không vượt quá giới hạn payload
+    for (let i = 0; i < texts.length; i += BATCH_SIZE) {
+      const batch = texts.slice(i, i + BATCH_SIZE);
 
-    const batchEmbeddings = await retryWithBackoff(async () => {
-      const { embeddings } = await embedMany({
-        model: google.textEmbeddingModel(DEFAULT_EMBEDDING_MODEL),
-        values: batch,
+      const batchEmbeddings = await retryWithBackoff(async () => {
+        const { embeddings } = await embedMany({
+          model: google.textEmbeddingModel(DEFAULT_EMBEDDING_MODEL),
+          values: batch,
+        });
+        return embeddings;
       });
-      return embeddings;
+
+      results.push(...batchEmbeddings);
+
+      // Thêm khoảng nghỉ nhỏ giữa các batch lớn để tránh burst rate limit
+      if (i + BATCH_SIZE < texts.length) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+    }
+
+    aiLogger.embedding({
+      mode: 'batch',
+      count: texts.length,
+      model: DEFAULT_EMBEDDING_MODEL,
+      durationMs: Date.now() - t0,
+      sampleText: texts[0],
     });
 
-    results.push(...batchEmbeddings);
-
-    // Thêm khoảng nghỉ nhỏ giữa các batch lớn để tránh burst rate limit
-    if (i + BATCH_SIZE < texts.length) {
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
+    return results;
+  } catch (err: any) {
+    aiLogger.embedding({
+      mode: 'batch',
+      count: texts.length,
+      model: DEFAULT_EMBEDDING_MODEL,
+      durationMs: Date.now() - t0,
+      sampleText: texts[0],
+      error: err.message,
+    });
+    throw err;
   }
-
-  return results;
 }

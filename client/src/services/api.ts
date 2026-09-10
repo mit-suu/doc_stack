@@ -22,6 +22,25 @@ export interface BackendDocument {
   updatedAt: string;
 }
 
+export interface BackendDocumentDetail extends BackendDocument {
+  rawText: string;
+}
+
+export interface BackendDocumentChunk {
+  _id: string;
+  documentId: string;
+  chunkIndex: number;
+  content: string;
+  metadata: {
+    title?: string;
+    sourceType?: string;
+    originalName?: string;
+    sourceUrl?: string;
+  };
+  embeddingLength?: number;
+  createdAt?: string;
+}
+
 export interface CitationItem {
   title: string;
   sourceType: string;
@@ -80,6 +99,42 @@ export async function fetchDocuments(): Promise<BackendDocument[]> {
     return await res.json();
   } catch (err: any) {
     console.error('[API] Lỗi khi tải danh sách tài liệu:', err);
+    throw err;
+  }
+}
+
+/**
+ * Lấy chi tiết tài liệu kèm nội dung văn bản đầy đủ (rawText)
+ */
+export async function fetchDocumentDetail(id: string): Promise<BackendDocumentDetail> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/documents/${id}`, {
+      headers: { ...getAuthHeaders() },
+    });
+    if (!res.ok) {
+      throw new Error(`Không thể lấy chi tiết tài liệu (Mã lỗi ${res.status})`);
+    }
+    return await res.json();
+  } catch (err: any) {
+    console.error(`[API] Lỗi khi tải chi tiết tài liệu ${id}:`, err);
+    throw err;
+  }
+}
+
+/**
+ * Lấy danh sách các chunk đã tạo của tài liệu
+ */
+export async function fetchDocumentChunks(id: string): Promise<BackendDocumentChunk[]> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/documents/${id}/chunks`, {
+      headers: { ...getAuthHeaders() },
+    });
+    if (!res.ok) {
+      throw new Error(`Không thể lấy danh sách chunks (Mã lỗi ${res.status})`);
+    }
+    return await res.json();
+  } catch (err: any) {
+    console.error(`[API] Lỗi khi tải chunks của tài liệu ${id}:`, err);
     throw err;
   }
 }
@@ -223,3 +278,162 @@ export async function sendChatMessage(
   }
   return data;
 }
+
+export type ChatCitation = CitationItem;
+
+export interface StreamChatMetadata {
+  sessionId: string;
+  citations: CitationItem[];
+  vectorSimilarity: string;
+}
+
+export interface StreamChatCallbacks {
+  onToken: (token: string, accumulated: string) => void;
+  onMetadata?: (meta: StreamChatMetadata) => void;
+  onComplete?: (fullAnswer: string) => void;
+  onError?: (err: Error) => void;
+}
+
+/**
+ * Gửi câu hỏi chat và stream nhận câu trả lời theo thời gian thực (Vercel AI SDK SSE)
+ * Cho trải nghiệm người dùng mượt mà giống hệt ChatGPT / Claude
+ */
+export async function streamChatMessage(
+  message: string,
+  sessionId?: string,
+  documentId?: string,
+  callbacks?: StreamChatCallbacks
+): Promise<{ answer: string; citations: CitationItem[]; sessionId?: string }> {
+  const res = await fetch(`${API_BASE_URL}/api/chat?stream=true`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify({ message, sessionId, documentId, stream: true }),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || `Lỗi máy chủ (${res.status})`);
+  }
+
+  if (!res.body) {
+    throw new Error('Trình duyệt không hỗ trợ luồng dữ liệu (ReadableStream)');
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let accumulated = '';
+  let metadataReceived: StreamChatMetadata | null = null;
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // Giữ lại dòng dở dang chưa hoàn tất
+
+      let currentEvent = 'message';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        if (trimmed.startsWith('event:')) {
+          currentEvent = trimmed.replace(/^event:\s*/, '');
+        } else if (trimmed.startsWith('data:')) {
+          const dataStr = trimmed.replace(/^data:\s*/, '');
+          try {
+            const parsed = JSON.parse(dataStr);
+            if (currentEvent === 'metadata') {
+              metadataReceived = parsed;
+              callbacks?.onMetadata?.(parsed);
+            } else if (currentEvent === 'token') {
+              if (parsed.text) {
+                accumulated += parsed.text;
+                callbacks?.onToken?.(parsed.text, accumulated);
+              }
+            } else if (currentEvent === 'done') {
+              callbacks?.onComplete?.(parsed.answer || accumulated);
+            } else if (currentEvent === 'error') {
+              throw new Error(parsed.error || 'Lỗi streaming từ AI');
+            }
+          } catch (jsonErr: any) {
+            if (currentEvent === 'error') {
+              throw jsonErr;
+            }
+            if (currentEvent === 'token' || currentEvent === 'message') {
+              accumulated += dataStr;
+              callbacks?.onToken?.(dataStr, accumulated);
+            }
+          }
+        }
+      }
+    }
+  } catch (err: any) {
+    callbacks?.onError?.(err);
+    throw err;
+  }
+
+  return {
+    answer: accumulated,
+    citations: metadataReceived?.citations || [],
+    sessionId: metadataReceived?.sessionId || sessionId,
+  };
+}
+
+export interface DocPresetSummary {
+  id: string;
+  name: string;
+  urlCount: number;
+}
+
+export interface PresetImportResult {
+  presetId: string;
+  presetName: string;
+  totalUrls: number;
+  succeeded: string[];
+  failed: { url: string; error: string }[];
+}
+
+/**
+ * Lấy danh sách preset tài liệu có sẵn từ backend
+ */
+export async function fetchDocPresets(): Promise<DocPresetSummary[]> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/presets`, {
+      headers: { ...getAuthHeaders() },
+    });
+    if (!res.ok) {
+      throw new Error(`Server trả về mã ${res.status}`);
+    }
+    return await res.json();
+  } catch (err: any) {
+    console.error('[API] Lỗi khi tải danh sách preset tài liệu:', err);
+    return [];
+  }
+}
+
+/**
+ * Tải về toàn bộ tài liệu theo preset
+ */
+export async function importDocPreset(presetId: string): Promise<PresetImportResult> {
+  const res = await fetch(`${API_BASE_URL}/api/presets/${presetId}/import`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Lỗi khi tải tài liệu theo preset');
+  }
+  return data;
+}
+

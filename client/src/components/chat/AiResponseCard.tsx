@@ -10,6 +10,7 @@ interface AiResponseCardProps {
   executiveSummary: string;
   stats: MetricStat[];
   isLoading?: boolean;
+  isStreaming?: boolean;
   onCopy?: () => void;
   onPin?: () => void;
   onShare?: () => void;
@@ -21,6 +22,7 @@ export const AiResponseCard: React.FC<AiResponseCardProps> = ({
   executiveSummary,
   stats,
   isLoading = false,
+  isStreaming = false,
   onCopy,
   onPin,
   onShare,
@@ -80,10 +82,18 @@ export const AiResponseCard: React.FC<AiResponseCardProps> = ({
 
       {/* Key Takeaways Overview */}
       <div className="mb-space-md">
-        <h4 className="font-label-mono text-label-mono text-primary uppercase tracking-widest mb-1.5">
-          Tóm lược kỹ thuật (Executive Summary)
-        </h4>
-        {isLoading ? (
+        <div className="flex items-center justify-between mb-1.5">
+          <h4 className="font-label-mono text-label-mono text-primary uppercase tracking-widest">
+            Tóm lược kỹ thuật (Executive Summary)
+          </h4>
+          {isStreaming && (
+            <span className="flex items-center gap-1.5 font-label-mono text-[11px] text-primary bg-primary/10 dark:bg-primary/20 px-2 py-0.5 rounded-full border border-primary/20 animate-pulse">
+              <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+              Đang sinh dữ liệu...
+            </span>
+          )}
+        </div>
+        {isLoading && !executiveSummary ? (
           <div className="space-y-3 py-2 animate-pulse">
             <div className="h-4 bg-primary/20 rounded-full w-3/4"></div>
             <div className="h-4 bg-primary/10 rounded-full w-full"></div>
@@ -92,6 +102,9 @@ export const AiResponseCard: React.FC<AiResponseCardProps> = ({
         ) : (
           <div className="font-body-lg text-body-lg text-on-surface leading-relaxed whitespace-pre-wrap">
             {executiveSummary}
+            {isStreaming && (
+              <span className="inline-block w-2.5 h-4.5 ml-1.5 bg-primary animate-pulse rounded-xs align-middle shadow-[0_0_8px_rgba(79,70,229,0.8)]" />
+            )}
           </div>
         )}
       </div>

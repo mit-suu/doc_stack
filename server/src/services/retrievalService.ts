@@ -3,6 +3,7 @@ import { getDb } from '../config/db.js';
 import { generateEmbedding } from './embeddingService.js';
 import { CHUNKS_COLLECTION_NAME } from '../repositories/chunkRepository.js';
 import { RetrievedChunk } from '../models/chunk.js';
+import { aiLogger } from '../utils/aiLogger.js';
 
 export const VECTOR_INDEX_NAME = 'vector_index';
 const DEFAULT_TOP_K = 5;
@@ -21,6 +22,7 @@ export async function retrieveContext(
   topK: number = DEFAULT_TOP_K,
   documentId?: string
 ): Promise<RetrievedChunk[]> {
+  const t0 = Date.now();
   const trimmedQuery = (query || '').trim();
   if (!trimmedQuery) {
     throw new Error('query không được để trống');
@@ -31,6 +33,13 @@ export async function retrieveContext(
   // Kiểm tra nếu collection document_chunks chưa có dữ liệu -> trả về mảng rỗng
   const chunkCount = await db.collection(CHUNKS_COLLECTION_NAME).estimatedDocumentCount();
   if (chunkCount === 0) {
+    aiLogger.retrieval({
+      query: trimmedQuery,
+      topK,
+      filterDocId: documentId,
+      resultsCount: 0,
+      durationMs: Date.now() - t0,
+    });
     return [];
   }
 
@@ -84,7 +93,7 @@ export async function retrieveContext(
       .toArray();
 
     // 3. Format kết quả trả về đúng chuẩn RetrievedChunk
-    return rawResults.map((item: any) => ({
+    const results: RetrievedChunk[] = rawResults.map((item: any) => ({
       content: item.content || '',
       metadata: item.metadata || {
         title: '',
@@ -94,7 +103,28 @@ export async function retrieveContext(
       documentId: item.documentId ? item.documentId.toString() : '',
       chunkIndex: typeof item.chunkIndex === 'number' ? item.chunkIndex : 0,
     }));
+
+    aiLogger.retrieval({
+      query: trimmedQuery,
+      topK,
+      filterDocId: documentId,
+      resultsCount: results.length,
+      topScore: results[0]?.score,
+      sources: results.map((r) => r.metadata.title),
+      durationMs: Date.now() - t0,
+    });
+
+    return results;
   } catch (err: any) {
+    aiLogger.retrieval({
+      query: trimmedQuery,
+      topK,
+      filterDocId: documentId,
+      resultsCount: 0,
+      durationMs: Date.now() - t0,
+      error: err.message,
+    });
+
     console.error('[RetrievalService] ❌ Lỗi khi thực hiện $vectorSearch:', err.message);
 
     // Bắt lỗi phổ biến khi index chưa tồn tại hoặc chưa chuyển sang trạng thái Active trên Atlas
