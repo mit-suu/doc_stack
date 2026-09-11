@@ -1,7 +1,8 @@
 import { getDocPresetById } from '../config/docPresets.js';
 import { crawlUrl } from './urlCrawler.js';
-import { createDocument, updateDocument } from '../repositories/documentRepository.js';
+import { createDocument, updateDocument, findDocumentByUrlAndUser } from '../repositories/documentRepository.js';
 import { processDocument } from './documentProcessor.js';
+import { ObjectId } from 'mongodb';
 
 export interface BatchCrawlResult {
   presetId: string;
@@ -36,21 +37,33 @@ export async function crawlPreset(
     console.log(`[BatchCrawler] [${i + 1}/${preset.urls.length}] Đang xử lý: ${url}`);
 
     try {
-      // 1. Tạo document pending gắn với userId của người dùng
-      const createdDoc = await createDocument({
-        title: url,
-        sourceType: 'url',
-        sourceUrl: url,
-        rawText: '',
-        status: 'pending',
-        userId,
-      });
+      // 1. Kiểm tra xem URL đã tồn tại trong nguồn của user chưa (tránh nhân bản rác)
+      let docId: ObjectId;
+      const existingDoc = userId ? await findDocumentByUrlAndUser(url, userId) : null;
+
+      if (existingDoc && existingDoc._id) {
+        docId = existingDoc._id;
+        await updateDocument(docId, {
+          status: 'pending',
+          errorMessage: undefined,
+        });
+      } else {
+        const createdDoc = await createDocument({
+          title: url,
+          sourceType: 'url',
+          sourceUrl: url,
+          rawText: '',
+          status: 'pending',
+          userId,
+        });
+        docId = createdDoc._id!;
+      }
 
       // 2. Crawl nội dung HTML và làm sạch rác UI
       const { title, content } = await crawlUrl(url);
 
       // 3. Cập nhật title và rawText vào DB
-      await updateDocument(createdDoc._id!, {
+      await updateDocument(docId, {
         title: title || url,
         rawText: content,
         status: 'ready',
@@ -58,9 +71,9 @@ export async function crawlPreset(
 
       // 4. Kích hoạt cắt chunk và tạo embedding vector ngay
       try {
-        await processDocument(createdDoc._id!.toString());
+        await processDocument(docId.toString());
       } catch (embedErr: any) {
-        console.error(`[BatchCrawler] ⚠️ Lỗi khi nhúng vector cho document ${createdDoc._id}:`, embedErr.message);
+        console.error(`[BatchCrawler] ⚠️ Lỗi khi nhúng vector cho document ${docId}:`, embedErr.message);
       }
 
       console.log(`[BatchCrawler] ✅ Hoàn tất tải & embedding: "${title}" (${url})`);

@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { Icon } from '../ui/Icon';
 import { MetricStat } from '../../types/chat';
+import { MarkdownRenderer } from './MarkdownRenderer';
 
 interface AiResponseCardProps {
   title: string;
@@ -84,7 +85,7 @@ export const AiResponseCard: React.FC<AiResponseCardProps> = ({
       <div className="mb-space-md">
         <div className="flex items-center justify-between mb-1.5">
           <h4 className="font-label-mono text-label-mono text-primary uppercase tracking-widest">
-            Tóm lược kỹ thuật (Executive Summary)
+            Phân tích kỹ thuật & Trả lời
           </h4>
           {isStreaming && (
             <span className="flex items-center gap-1.5 font-label-mono text-[11px] text-primary bg-primary/10 dark:bg-primary/20 px-2 py-0.5 rounded-full border border-primary/20 animate-pulse">
@@ -100,11 +101,8 @@ export const AiResponseCard: React.FC<AiResponseCardProps> = ({
             <div className="h-4 bg-primary/10 rounded-full w-5/6"></div>
           </div>
         ) : (
-          <div className="font-body-lg text-body-lg text-on-surface leading-relaxed whitespace-pre-wrap">
-            {executiveSummary}
-            {isStreaming && (
-              <span className="inline-block w-2.5 h-4.5 ml-1.5 bg-primary animate-pulse rounded-xs align-middle shadow-[0_0_8px_rgba(79,70,229,0.8)]" />
-            )}
+          <div className="py-1">
+            <MarkdownRenderer content={executiveSummary} isStreaming={isStreaming} />
           </div>
         )}
       </div>

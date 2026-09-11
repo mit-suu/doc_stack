@@ -27,6 +27,14 @@ export const metadata: Metadata = {
   title: 'DocStack - AI-Powered Technical Architecture & RAG Intelligence',
   description:
     'Nền tảng phân tích tài liệu kỹ thuật, RAG vector similarity và đối chiếu kiến trúc thông minh với Google Gemini và DocStack AI.',
+  icons: {
+    icon: [
+      { url: '/shark_icon.png', sizes: '32x32', type: 'image/png' },
+      { url: '/shark_logo.png', sizes: '192x192', type: 'image/png' },
+    ],
+    shortcut: '/shark_icon.png',
+    apple: '/shark_logo.png',
+  },
 };
 
 export default function RootLayout({
@@ -41,6 +49,10 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
+        <link rel="icon" type="image/png" sizes="32x32" href="/shark_icon.png" />
+        <link rel="icon" type="image/png" sizes="192x192" href="/shark_logo.png" />
+        <link rel="shortcut icon" href="/shark_icon.png" />
+        <link rel="apple-touch-icon" href="/shark_logo.png" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         <link

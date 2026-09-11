@@ -55,7 +55,7 @@ export const RecentSessions: React.FC<RecentSessionsProps> = ({
 
       {isExpanded && (
         <div className="px-1.5 pb-2">
-          <div className="space-y-px max-h-[280px] overflow-y-auto px-1">
+          <div className="space-y-px max-h-[190px] overflow-y-auto px-1 scrollbar-thin scrollbar-thumb-black/10 dark:scrollbar-thumb-white/10 pr-0.5">
             {sessions.length === 0 ? (
               <div className="py-4 px-3 text-center">
                 <p className="text-[11px] text-outline">

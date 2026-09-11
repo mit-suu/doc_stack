@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.64",
+    "@ai-sdk/openai": "^4.0.65",
     "@langchain/textsplitters": "^1.0.1",
     "ai": "^7.0.93",
     "axios": "^1.20.0",
@@ -25,6 +26,7 @@
     "mongodb": "^7.6.0",
     "morgan": "^1.12.0",
     "multer": "^2.3.0",
+    "openai": "^7.13.0",
     "pdf-parse": "^2.4.5"
   },
   "devDependencies": {

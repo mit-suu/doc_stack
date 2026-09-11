@@ -311,6 +311,13 @@ export interface StreamChatMetadata {
   sessionId: string;
   citations: CitationItem[];
   vectorSimilarity: string;
+  missingDocSuggestion?: {
+    technology: string;
+    topic: string;
+    title: string;
+    url: string;
+    reason: string;
+  } | null;
 }
 
 export interface StreamChatCallbacks {

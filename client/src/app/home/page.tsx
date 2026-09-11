@@ -7,24 +7,24 @@ import { TopSystemHeader } from '../../components/layout/TopSystemHeader';
 import { FrostedWorkspaceBar } from '../../components/layout/FrostedWorkspaceBar';
 import { AmbientBackground } from '../../components/layout/AmbientBackground';
 import { SourcesCard } from '../../components/sidebar/SourcesCard';
-import { QuickSlashPrompts } from '../../components/sidebar/QuickSlashPrompts';
 import { RecentSessions } from '../../components/sidebar/RecentSessions';
 import { UserQueryBubble } from '../../components/chat/UserQueryBubble';
 import { AiResponseCard } from '../../components/chat/AiResponseCard';
 import { CitationsCard } from '../../components/chat/CitationsCard';
 import { FollowUpPills } from '../../components/chat/FollowUpPills';
+import { MissingDocActionCard } from '../../components/chat/MissingDocActionCard';
 import { PromptInputBar } from '../../components/chat/PromptInputBar';
 import { SettingsModal } from '../../components/ui/SettingsModal';
 import { DocumentPreviewModal } from '../../components/ui/DocumentPreviewModal';
 import { PresetDocsDownloader } from '../../components/sidebar/PresetDocsDownloader';
 import { Icon } from '../../components/ui/Icon';
-import { standardSlashPrompts } from '../../constants/slashPrompts';
-import { SlashPrompt, RecentSession, WorkspaceContext } from '../../types/workspace';
+import { RecentSession, WorkspaceContext } from '../../types/workspace';
 import { IndexedDocument, DocumentStats } from '../../types/document';
-import { Citation, UserQueryMessage, AiAnalysisData } from '../../types/chat';
+import { Citation, UserQueryMessage, AiAnalysisData, MissingDocSuggestion } from '../../types/chat';
 import {
   fetchDocuments,
   uploadDocument,
+  crawlDocument,
   deleteDocument as apiDeleteDocument,
   streamChatMessage,
   fetchSessions,
@@ -48,6 +48,12 @@ function formatRelativeTime(dateStr: string): string {
   return `${diffDays} ngày`;
 }
 
+export interface ChatTurn {
+  id: string;
+  userQuery: UserQueryMessage;
+  aiAnalysis: AiAnalysisData;
+}
+
 export default function HomePage() {
   const { user, isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
@@ -67,13 +73,12 @@ export default function HomePage() {
 
   // Chọn nhiều tài liệu (Multi-select)
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
-  const [slashPrompts] = useState<SlashPrompt[]>(standardSlashPrompts);
   const [recentSessions, setRecentSessions] = useState<RecentSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
-  // Cuộc trò chuyện thực tế (khởi tạo null - không còn mock data)
-  const [userQuery, setUserQuery] = useState<UserQueryMessage | null>(null);
-  const [aiAnalysis, setAiAnalysis] = useState<AiAnalysisData | null>(null);
+  // Cuộc trò chuyện nhiều lượt như ChatGPT (Multi-turn conversation thread)
+  const [chatTurns, setChatTurns] = useState<ChatTurn[]>([]);
+  const chatBottomRef = React.useRef<HTMLDivElement>(null);
 
   const [notification, setNotification] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -81,6 +86,13 @@ export default function HomePage() {
   const [isThinking, setIsThinking] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+
+  // Tự động cuộn mượt xuống cuối hội thoại khi có tin nhắn mới hoặc đang stream
+  useEffect(() => {
+    if (chatTurns.length > 0) {
+      chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatTurns.length, isStreaming]);
 
   // Auth Guard: Chưa đăng nhập sẽ chuyển về /login
   useEffect(() => {
@@ -107,7 +119,8 @@ export default function HomePage() {
 
   const mapBackendDocToIndexed = (doc: BackendDocument): IndexedDocument => {
     let type: IndexedDocument['type'] = 'code';
-    if (doc.fileType === 'pdf') type = 'pdf';
+    if (doc.sourceType === 'url') type = 'url';
+    else if (doc.fileType === 'pdf') type = 'pdf';
     else if (doc.fileType === 'docx') type = 'docx';
     else if (doc.fileType === 'md') type = 'markdown';
 
@@ -116,12 +129,13 @@ export default function HomePage() {
 
     return {
       id: doc._id,
-      name: doc.title || doc.originalName || 'Tài liệu không tên',
+      name: doc.title || doc.originalName || doc.sourceUrl || 'Tài liệu không tên',
       type,
-      pages: doc.sourceType === 'url' ? 'Web crawl' : (doc.fileType?.toUpperCase() || 'FILE'),
+      pages: doc.sourceType === 'url' ? 'Web link' : (doc.fileType?.toUpperCase() || 'FILE'),
       status: isSyncing ? 'syncing' : isFailed ? 'failed' : 'ready',
       progressPercent: isSyncing ? 65 : 100,
       vectorCount: doc.status === 'embedded' ? 15 : 0,
+      sourceUrl: doc.sourceUrl,
     };
   };
 
@@ -143,6 +157,9 @@ export default function HomePage() {
         }
 
         setDocuments(deduped);
+        // Mặc định chọn toàn bộ tài liệu như NotebookLM khi mới tải
+        setSelectedDocIds((prev) => (prev.length === 0 ? deduped.map((d) => d.id) : prev));
+
         setDocumentStats({
           totalCount: deduped.length,
           totalSize: `${(deduped.length * 0.8).toFixed(1)} MB`,
@@ -209,94 +226,97 @@ export default function HomePage() {
   // Bỏ chọn toàn bộ tài liệu
   const handleClearAll = () => {
     setSelectedDocIds([]);
-    showToast(`Đã bỏ chọn. Ngữ cảnh: Toàn bộ kho tài liệu của bạn`);
+    showToast('Đã bỏ chọn toàn bộ tài liệu (Deselected)');
   };
 
   // Xóa tài liệu thật từ database
   const handleDeleteDocument = async (doc: IndexedDocument) => {
     if (confirm(`Bạn có chắc chắn muốn xóa tài liệu "${doc.name}" và các vector chunk liên quan không?`)) {
       try {
-        await apiDeleteDocument(doc.id);
+        // Cập nhật UI ngay lập tức (Optimistic Update)
+        setDocuments((prev) => prev.filter((d) => d.id !== doc.id && d.name !== doc.name));
         setSelectedDocIds((prev) => prev.filter((id) => id !== doc.id));
         showToast(`Đã xóa tài liệu: ${doc.name}`);
+
+        await apiDeleteDocument(doc.id);
         await loadDocuments();
       } catch (err: any) {
         showToast(`❌ Lỗi xóa tài liệu: ${err.message}`);
+        await loadDocuments();
       }
     }
   };
 
-  const handleSelectPrompt = (prompt: SlashPrompt) => {
-    showToast(`Đã chọn lệnh: ${prompt.command}`);
-    handleSendPrompt(`${prompt.command} ${prompt.description}`);
-  };
-
-  // Chọn một phiên chat để xem lại lịch sử
+  // Chọn một phiên chat để xem lại lịch sử đầy đủ các câu hỏi
   const handleSelectSession = async (session: RecentSession) => {
     setActiveSessionId(session.id);
     showToast(`Đang mở phiên: ${session.title}...`);
     try {
       const detail = await fetchSessionDetail(session.id);
       if (detail && detail.messages && detail.messages.length > 0) {
-        const userMsgs = detail.messages.filter((m) => m.role === 'user');
-        const aiMsgs = detail.messages.filter((m) => m.role === 'assistant');
+        const reconstructedTurns: ChatTurn[] = [];
+        let pendingUserMsg: UserQueryMessage | null = null;
 
-        const lastUser = userMsgs[userMsgs.length - 1];
-        const lastAi = aiMsgs[aiMsgs.length - 1];
+        for (const msg of detail.messages) {
+          if (msg.role === 'user') {
+            pendingUserMsg = {
+              id: msg.id,
+              author: user?.name ? `${user.name} (Kỹ sư)` : 'Bạn (Kỹ sư hệ thống)',
+              avatarLetter: user?.name ? user.name.charAt(0).toUpperCase() : 'U',
+              time: new Date(msg.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+              queryText: msg.content,
+              attachedDoc: 'Phiên trò chuyện đã lưu',
+              model: 'GLM-5.3 (Modal)',
+            };
+          } else if (msg.role === 'assistant' && pendingUserMsg) {
+            const mappedCitations: Citation[] = (msg.citations || []).map((c, idx) => ({
+              id: `cite-${idx}`,
+              sourceFile: c.originalName || c.title || 'Tài liệu',
+              reference: `Chunk #${c.chunkIndex + 1} (${(c.score * 100).toFixed(1)}%)`,
+              quote: c.snippet,
+              accentColor: idx % 2 === 0 ? 'secondary' : 'tertiary',
+            }));
 
-        if (lastUser) {
-          setUserQuery({
-            id: lastUser.id,
-            author: user?.name ? `${user.name} (Kỹ sư)` : 'Bạn (Kỹ sư hệ thống)',
-            avatarLetter: user?.name ? user.name.charAt(0).toUpperCase() : 'U',
-            time: new Date(lastUser.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-            queryText: lastUser.content,
-            attachedDoc: 'Phiên trò chuyện đã lưu',
-            model: 'Gemini 3.6 Flash',
-          });
+            const topScore =
+              msg.citations && msg.citations.length > 0
+                ? `${(msg.citations[0].score * 100).toFixed(1)}%`
+                : '96.0%';
+
+            reconstructedTurns.push({
+              id: msg.id || `turn-${reconstructedTurns.length}`,
+              userQuery: pendingUserMsg,
+              aiAnalysis: {
+                title: 'DocStack RAG Assistant',
+                vectorSimilarity: topScore,
+                executiveSummary: msg.content,
+                citations: mappedCitations,
+                stats: [
+                  {
+                    label: 'Độ tương đồng Vector',
+                    value: topScore,
+                    subtext: `${mappedCitations.length} nguồn tham chiếu Atlas`,
+                    type: 'tertiary',
+                  },
+                  {
+                    label: 'Mô hình suy luận',
+                    value: 'GLM-5.3 (Modal)',
+                    subtext: 'Dự phòng: Gemini 3.6',
+                    type: 'secondary',
+                  },
+                  {
+                    label: 'Atlas Vector Search',
+                    value: 'Cosine Index',
+                    subtext: '3072 dims (gemini-embedding-001)',
+                    type: 'default',
+                  },
+                ],
+              },
+            });
+            pendingUserMsg = null;
+          }
         }
 
-        if (lastAi) {
-          const mappedCitations: Citation[] = (lastAi.citations || []).map((c, idx) => ({
-            id: `cite-${idx}`,
-            sourceFile: c.originalName || c.title || 'Tài liệu',
-            reference: `Chunk #${c.chunkIndex + 1} (${(c.score * 100).toFixed(1)}%)`,
-            quote: c.snippet,
-            accentColor: idx % 2 === 0 ? 'secondary' : 'tertiary',
-          }));
-
-          const topScore =
-            lastAi.citations && lastAi.citations.length > 0
-              ? `${(lastAi.citations[0].score * 100).toFixed(1)}%`
-              : '96.0%';
-
-          setAiAnalysis({
-            title: 'DocStack RAG Assistant',
-            vectorSimilarity: topScore,
-            executiveSummary: lastAi.content,
-            citations: mappedCitations,
-            stats: [
-              {
-                label: 'Độ tương đồng Vector',
-                value: topScore,
-                subtext: `${mappedCitations.length} nguồn tham chiếu Atlas`,
-                type: 'tertiary',
-              },
-              {
-                label: 'Mô hình suy luận',
-                value: 'Gemini 3.6',
-                subtext: 'Google DeepMind (Streaming)',
-                type: 'secondary',
-              },
-              {
-                label: 'Atlas Vector Search',
-                value: 'Cosine Index',
-                subtext: '3072 dims (gemini-embedding-001)',
-                type: 'default',
-              },
-            ],
-          });
-        }
+        setChatTurns(reconstructedTurns);
       }
     } catch (err: any) {
       showToast(`❌ Không thể tải chi tiết phiên: ${err.message}`);
@@ -306,8 +326,7 @@ export default function HomePage() {
   // Bắt đầu một phiên chat mới độc lập (Reset về Welcome State)
   const handleNewSession = () => {
     setActiveSessionId(null);
-    setUserQuery(null);
-    setAiAnalysis(null);
+    setChatTurns([]);
     showToast('Đã bắt đầu phiên trò chuyện mới');
   };
 
@@ -338,39 +357,40 @@ export default function HomePage() {
     }
   };
 
-  const handleSendPrompt = async (text: string) => {
+  const handleSendPrompt = async (text: string, overrideDocIds?: string[]) => {
     if (!text.trim()) return;
 
+    // Sử dụng overrideDocIds nếu có (ví dụ: khi gửi lại câu hỏi sau khi nạp doc mới)
+    const effectiveDocIds = overrideDocIds || selectedDocIds;
+
     // Xác định tên ngữ cảnh tài liệu để hiển thị footer
-    let contextLabel = 'Toàn bộ kho tài liệu';
-    if (selectedDocIds.length === 1) {
-      const matched = documents.find((d) => d.id === selectedDocIds[0]);
+    let contextLabel = '0 tài liệu (Bỏ chọn - Deselected)';
+    if (effectiveDocIds.length === 1) {
+      const matched = documents.find((d) => d.id === effectiveDocIds[0]);
       contextLabel = matched?.name || '1 tài liệu đã chọn';
-    } else if (selectedDocIds.length > 1) {
-      contextLabel = `${selectedDocIds.length} tài liệu đã chọn`;
+    } else if (effectiveDocIds.length > 1) {
+      contextLabel = `${effectiveDocIds.length} tài liệu đã chọn`;
     }
 
-    // Cập nhật khung tin nhắn người dùng thuần túy, KHÔNG chèn prefix
+    const turnId = Date.now().toString();
+
+    // Cập nhật tin nhắn người dùng
     const userMsg: UserQueryMessage = {
-      id: Date.now().toString(),
+      id: `user-${turnId}`,
       author: user?.name ? `${user.name} (Kỹ sư)` : 'Bạn (Kỹ sư hệ thống)',
       avatarLetter: user?.name ? user.name.charAt(0).toUpperCase() : 'U',
       time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
       queryText: text.trim(),
       attachedDoc: contextLabel,
-      model: 'Gemini 3.6 Flash',
+      model: 'GLM-5.3 (Modal)',
     };
 
-    setUserQuery(userMsg);
-    setIsThinking(true);
-    setIsStreaming(true);
-
-    // Chuẩn bị khung phân tích của AI sẵn sàng nhận luồng dữ liệu streaming thật
-    setAiAnalysis({
+    const initialAiAnalysis: AiAnalysisData = {
       title: 'DocStack RAG Assistant',
       vectorSimilarity: 'Đang tính toán...',
       executiveSummary: '',
       citations: [],
+      missingDocSuggestion: null,
       stats: [
         {
           label: 'Độ tương đồng Vector',
@@ -380,8 +400,8 @@ export default function HomePage() {
         },
         {
           label: 'Mô hình suy luận',
-          value: 'Gemini 3.6',
-          subtext: 'Google DeepMind (Streaming)',
+          value: 'GLM-5.3 (Modal)',
+          subtext: 'Dự phòng: Gemini 3.6',
           type: 'secondary',
         },
         {
@@ -391,19 +411,34 @@ export default function HomePage() {
           type: 'default',
         },
       ],
-    });
+    };
+
+    // Append turn mới vào danh sách chatTurns (bảo toàn 100% các câu hỏi trước đó!)
+    setChatTurns((prev) => [
+      ...prev,
+      {
+        id: turnId,
+        userQuery: userMsg,
+        aiAnalysis: initialAiAnalysis,
+      },
+    ]);
+
+    setIsThinking(true);
+    setIsStreaming(true);
 
     try {
       await streamChatMessage(
         text.trim(),
         activeSessionId || undefined,
-        selectedDocIds.length > 0 ? selectedDocIds : undefined,
+        effectiveDocIds,
         {
           onMetadata: (meta) => {
             if (meta.sessionId) {
               setActiveSessionId(meta.sessionId);
             }
-            if (meta.citations) {
+            const suggestion = meta.missingDocSuggestion || null;
+
+            if (meta.citations !== undefined) {
               const mappedCitations: Citation[] = meta.citations.map((c, idx) => ({
                 id: `cite-${idx}`,
                 sourceFile: c.originalName || c.title || 'Tài liệu',
@@ -412,54 +447,110 @@ export default function HomePage() {
                 accentColor: idx % 2 === 0 ? 'secondary' : 'tertiary',
               }));
 
+              const isDeselected = effectiveDocIds.length === 0;
+
               const topScore =
                 meta.citations && meta.citations.length > 0
                   ? `${(meta.citations[0].score * 100).toFixed(1)}%`
+                  : suggestion
+                  ? 'Chờ nạp tài liệu'
+                  : isDeselected
+                  ? '0%'
                   : 'N/A';
 
-              setAiAnalysis((prev) => ({
-                ...(prev || {
-                  title: 'DocStack RAG Assistant',
-                  executiveSummary: '',
-                  stats: [],
-                  citations: [],
-                }),
-                vectorSimilarity: topScore,
-                citations: mappedCitations,
-                stats: [
-                  {
-                    label: 'Độ tương đồng Vector',
-                    value: topScore,
-                    subtext: `${mappedCitations.length} nguồn tham chiếu Atlas`,
-                    type: 'tertiary',
-                  },
-                  {
-                    label: 'Mô hình suy luận',
-                    value: 'Gemini 3.6',
-                    subtext: 'Google DeepMind (Streaming)',
-                    type: 'secondary',
-                  },
-                  {
-                    label: 'Atlas Vector Search',
-                    value: 'Cosine Index',
-                    subtext: '3072 dims (gemini-embedding-001)',
-                    type: 'default',
-                  },
-                ],
-              }));
+              setChatTurns((prev) =>
+                prev.map((turn) => {
+                  if (turn.id !== turnId) return turn;
+                  return {
+                    ...turn,
+                    aiAnalysis: {
+                      ...turn.aiAnalysis,
+                      vectorSimilarity: topScore,
+                      citations: mappedCitations,
+                      missingDocSuggestion: suggestion,
+                      stats: suggestion
+                        ? [
+                            {
+                              label: 'Đề xuất tài liệu',
+                              value: suggestion.technology,
+                              subtext: suggestion.topic,
+                              type: 'tertiary',
+                            },
+                            {
+                              label: 'Trạng thái',
+                              value: 'Sẵn sàng nạp vào',
+                              subtext: 'Chính chủ Verified',
+                              type: 'secondary',
+                            },
+                            {
+                              label: 'Hành động',
+                              value: 'Nạp & Giải đáp',
+                              subtext: 'Bấm nút nạp ở thẻ bên dưới',
+                              type: 'default',
+                            },
+                          ]
+                        : isDeselected
+                        ? [
+                            {
+                              label: 'Độ tương đồng Vector',
+                              value: '0%',
+                              subtext: '0 tài liệu được chọn',
+                              type: 'tertiary',
+                            },
+                            {
+                              label: 'Trạng thái nguồn',
+                              value: 'Bỏ chọn (Deselected)',
+                              subtext: 'Chưa chọn tài liệu nào',
+                              type: 'secondary',
+                            },
+                            {
+                              label: 'Hành động',
+                              value: 'Cần chọn tài liệu',
+                              subtext: 'Tích chọn tại bảng Nguồn bên trái',
+                              type: 'default',
+                            },
+                          ]
+                        : [
+                            {
+                              label: 'Độ tương đồng Vector',
+                              value: topScore,
+                              subtext: `${mappedCitations.length} nguồn tham chiếu Atlas`,
+                              type: 'tertiary',
+                            },
+                            {
+                              label: 'Mô hình suy luận',
+                              value: 'GLM-5.3 (Modal)',
+                              subtext: 'Dự phòng: Gemini 3.6',
+                              type: 'secondary',
+                            },
+                            {
+                              label: 'Atlas Vector Search',
+                              value: 'Cosine Index',
+                              subtext: '3072 dims (gemini-embedding-001)',
+                              type: 'default',
+                            },
+                          ],
+                    },
+                  };
+                })
+              );
             }
           },
           onToken: (_token, accumulated) => {
             setIsThinking(false);
-            setAiAnalysis((prev) => ({
-              ...(prev || {
-                title: 'DocStack RAG Assistant',
-                vectorSimilarity: '95%',
-                stats: [],
-                citations: [],
-              }),
-              executiveSummary: accumulated,
-            }));
+            setChatTurns((prev) =>
+              prev.map((turn) =>
+                turn.id === turnId
+                  ? {
+                      ...turn,
+                      aiAnalysis: {
+                        ...turn.aiAnalysis,
+                        executiveSummary: accumulated,
+                      },
+                    }
+                  : turn
+              )
+            );
           },
           onComplete: async () => {
             setIsStreaming(false);
@@ -470,16 +561,21 @@ export default function HomePage() {
       );
     } catch (err: any) {
       showToast(`❌ Lỗi truy vấn: ${err.message}`);
-      setAiAnalysis((prev) => ({
-        ...(prev || {
-          title: 'Lỗi truy vấn RAG',
-          stats: [],
-          citations: [],
-        }),
-        title: 'Lỗi truy vấn RAG',
-        vectorSimilarity: '0%',
-        executiveSummary: `Không thể hoàn tất phân tích: ${err.message}. Hãy đảm bảo server backend đang hoạt động.`,
-      }));
+      setChatTurns((prev) =>
+        prev.map((turn) =>
+          turn.id === turnId
+            ? {
+                ...turn,
+                aiAnalysis: {
+                  ...turn.aiAnalysis,
+                  title: 'Lỗi truy vấn RAG',
+                  vectorSimilarity: '0%',
+                  executiveSummary: `Không thể hoàn tất phân tích: ${err.message}. Hãy đảm bảo server backend đang hoạt động.`,
+                },
+              }
+            : turn
+        )
+      );
     } finally {
       setIsThinking(false);
       setIsStreaming(false);
@@ -504,6 +600,60 @@ export default function HomePage() {
 
     setIsUploading(false);
     await loadDocuments();
+  };
+
+  const handleCrawlUrl = async (url: string) => {
+    if (!url || !url.trim()) return;
+    showToast('Đang kết nối và cào nội dung từ URL...');
+    try {
+      const created = await crawlDocument(url.trim());
+      showToast(`✅ Đã cào & nhúng vector: ${created.title || url}`);
+      await loadDocuments();
+      if (created._id) {
+        setSelectedDocIds((prev) => [...new Set([...prev, created._id])]);
+      }
+    } catch (err: any) {
+      showToast(`❌ Lỗi crawl URL: ${err.message}`);
+      throw err;
+    }
+  };
+
+  const handleConfirmCrawlSuggestion = async (suggestion: MissingDocSuggestion) => {
+    showToast(`Đang kết nối & nạp tài liệu từ: ${suggestion.title}...`);
+    try {
+      const created = await crawlDocument(suggestion.url);
+      showToast(`✅ Đã nạp thành công: ${created.title || suggestion.topic}`);
+      await loadDocuments();
+
+      // Lấy câu hỏi cuối cùng của người dùng
+      const lastQuery = chatTurns[chatTurns.length - 1]?.userQuery?.queryText;
+
+      // Ẩn thẻ đề xuất sau khi đã nạp
+      setChatTurns((prev) =>
+        prev.map((turn) => ({
+          ...turn,
+          aiAnalysis: {
+            ...turn.aiAnalysis,
+            missingDocSuggestion: null,
+          },
+        }))
+      );
+
+      if (created._id) {
+        // CHỈ tick mỗi tài liệu mới nạp (bỏ tick tất cả cái cũ)
+        setSelectedDocIds([created._id]);
+        showToast(`📌 Đã chọn riêng tài liệu: ${created.title || suggestion.topic}`);
+
+        // Gửi lại câu hỏi trực tiếp với doc IDs mới — truyền thẳng vào hàm, không phụ thuộc state
+        if (lastQuery) {
+          showToast('🔍 Đang giải đáp dựa trên tài liệu vừa nạp...');
+          handleSendPrompt(lastQuery, [created._id]);
+        }
+      }
+    } catch (err: any) {
+      showToast(`❌ Lỗi nạp tài liệu: ${err.message}`);
+      throw err;
+    }
   };
 
   return (
@@ -557,8 +707,8 @@ export default function HomePage() {
 
           {/* Main Bento Grid Workspace */}
           <div className="w-full max-w-[1440px] mx-auto px-space-md sm:px-space-lg pt-space-lg grid grid-cols-1 lg:grid-cols-12 gap-space-lg items-start relative z-10">
-            {/* LEFT COLUMN: Sources, Quick Prompts & Navigation Bento (4 cols on lg) */}
-            <aside className="lg:col-span-4 flex flex-col gap-space-md order-2 lg:order-1">
+            {/* LEFT COLUMN: Sticky Fixed Sidebar with Sources, Preset & Recent Sessions */}
+            <aside className="lg:col-span-4 flex flex-col gap-space-md order-2 lg:order-1 lg:sticky lg:top-[76px] lg:max-h-[calc(100vh-96px)] lg:overflow-y-auto pr-1 pb-6 scrollbar-thin scrollbar-thumb-black/10 dark:scrollbar-thumb-white/10">
               <SourcesCard
                 documents={documents}
                 stats={documentStats}
@@ -569,6 +719,7 @@ export default function HomePage() {
                 onPreviewDocument={(doc) => setPreviewDocId(doc.id)}
                 onDeleteDocument={handleDeleteDocument}
                 onFileSelect={handleFileSelect}
+                onCrawlUrl={handleCrawlUrl}
               />
 
               <PresetDocsDownloader
@@ -576,11 +727,6 @@ export default function HomePage() {
                   await loadDocuments();
                 }}
                 showToast={showToast}
-              />
-
-              <QuickSlashPrompts
-                prompts={slashPrompts}
-                onSelectPrompt={handleSelectPrompt}
               />
 
               <RecentSessions
@@ -595,7 +741,7 @@ export default function HomePage() {
             {/* RIGHT / MAIN COLUMN: Conversation & Intelligence Bento (8 cols on lg) */}
             <section className="lg:col-span-8 flex flex-col gap-space-lg order-1 lg:order-2">
               {/* Nếu chưa có câu hỏi nào: Hiển thị Welcome Hero State sang trọng */}
-              {!userQuery ? (
+              {chatTurns.length === 0 ? (
                 <div className="p-space-xl rounded-3xl backdrop-blur-xl bg-white/70 dark:bg-white/[0.03] border border-black/[0.08] dark:border-white/[0.08] shadow-[0_12px_36px_rgba(15,23,42,0.06)] dark:shadow-[0_12px_36px_rgba(0,0,0,0.35)] flex flex-col gap-5">
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-primary to-secondary flex items-center justify-center shadow-[0_0_20px_rgba(79,70,229,0.4)]">
@@ -675,44 +821,76 @@ export default function HomePage() {
                   </p>
                 </div>
               ) : (
-                /* Giao diện khi đã có câu hỏi và câu trả lời */
-                <>
-                  {/* User Query Card */}
-                  <UserQueryBubble message={userQuery} />
+                /* Giao diện hiển thị toàn bộ lịch sử các lượt hội thoại (Multi-turn Chat Thread) */
+                <div className="flex flex-col gap-8 pb-36">
+                  {chatTurns.map((turn, index) => {
+                    const isLastTurn = index === chatTurns.length - 1;
 
-                  {/* DocStack AI Response */}
-                  {aiAnalysis && (
-                    <div className="flex flex-col gap-space-md">
-                      {/* AI Header & Key Takeaways Card */}
-                      <AiResponseCard
-                        title={aiAnalysis.title}
-                        vectorSimilarity={aiAnalysis.vectorSimilarity}
-                        executiveSummary={aiAnalysis.executiveSummary}
-                        stats={aiAnalysis.stats}
-                        isLoading={isThinking}
-                        isStreaming={isStreaming}
-                        onPin={() => showToast('Đã ghim phản hồi này vào danh sách lưu')}
-                        onShare={() => showToast('Đã tạo liên kết chia sẻ phản hồi')}
-                      />
+                    return (
+                      <div key={turn.id} className="flex flex-col gap-space-md">
+                        {/* User Query Bubble */}
+                        <UserQueryBubble message={turn.userQuery} />
 
-                      {/* Citations & Verified Document Sources Grid */}
-                      {aiAnalysis.citations.length > 0 && (
-                        <CitationsCard
-                          citations={aiAnalysis.citations}
-                          onOpenCitation={handleOpenCitation}
-                        />
-                      )}
+                        {/* DocStack AI Response */}
+                        <div className="flex flex-col gap-space-md">
+                          {/* AI Header & Key Takeaways Card */}
+                          <AiResponseCard
+                            title={turn.aiAnalysis.title}
+                            vectorSimilarity={turn.aiAnalysis.vectorSimilarity}
+                            executiveSummary={turn.aiAnalysis.executiveSummary}
+                            stats={turn.aiAnalysis.stats}
+                            isLoading={isThinking && isLastTurn && !turn.aiAnalysis.executiveSummary}
+                            isStreaming={isStreaming && isLastTurn}
+                            onPin={() => showToast('Đã ghim phản hồi này vào danh sách lưu')}
+                            onShare={() => showToast('Đã tạo liên kết chia sẻ phản hồi')}
+                          />
 
-                      {/* Follow-up Suggestions if any */}
-                      {aiAnalysis.followUpSuggestions && aiAnalysis.followUpSuggestions.length > 0 && (
-                        <FollowUpPills
-                          suggestions={aiAnalysis.followUpSuggestions}
-                          onSelectSuggestion={(text) => handleSendPrompt(text)}
-                        />
-                      )}
-                    </div>
-                  )}
-                </>
+                          {/* Thẻ xác nhận nạp tài liệu chính thức theo ngữ cảnh (Chiến lược 2) */}
+                          {turn.aiAnalysis.missingDocSuggestion && isLastTurn && !isStreaming && (
+                            <MissingDocActionCard
+                              suggestion={turn.aiAnalysis.missingDocSuggestion}
+                              onConfirmCrawl={handleConfirmCrawlSuggestion}
+                              onDismiss={() => {
+                                setChatTurns((prev) =>
+                                  prev.map((t) =>
+                                    t.id === turn.id
+                                      ? {
+                                          ...t,
+                                          aiAnalysis: {
+                                            ...t.aiAnalysis,
+                                            missingDocSuggestion: null,
+                                          },
+                                        }
+                                      : t
+                                  )
+                                );
+                              }}
+                            />
+                          )}
+
+                          {/* Citations & Verified Document Sources Grid */}
+                          {turn.aiAnalysis.citations.length > 0 && (
+                            <CitationsCard
+                              citations={turn.aiAnalysis.citations}
+                              onOpenCitation={handleOpenCitation}
+                            />
+                          )}
+
+                          {/* Follow-up Suggestions if any (chỉ hiển thị ở lượt cuối cùng) */}
+                          {isLastTurn && turn.aiAnalysis.followUpSuggestions && turn.aiAnalysis.followUpSuggestions.length > 0 && (
+                            <FollowUpPills
+                              suggestions={turn.aiAnalysis.followUpSuggestions}
+                              onSelectSuggestion={(text) => handleSendPrompt(text)}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Ref để cuộn mượt xuống cuối trang */}
+                  <div ref={chatBottomRef} className="h-4" />
+                </div>
               )}
             </section>
           </div>

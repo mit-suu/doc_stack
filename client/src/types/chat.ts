@@ -38,6 +38,14 @@ export interface Citation {
   accentColor: 'secondary' | 'tertiary';
 }
 
+export interface MissingDocSuggestion {
+  technology: string;
+  topic: string;
+  title: string;
+  url: string;
+  reason: string;
+}
+
 export interface AiAnalysisData {
   title: string;
   vectorSimilarity: string;
@@ -52,4 +60,5 @@ export interface AiAnalysisData {
   codeSnippet?: CodeSnippet;
   citations: Citation[];
   followUpSuggestions?: string[];
+  missingDocSuggestion?: MissingDocSuggestion | null;
 }

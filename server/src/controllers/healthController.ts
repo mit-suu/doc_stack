@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { db, connectDB } from '../config/db.js';
 import { generateText } from 'ai';
-import { google } from '../config/ai.js';
+import { google, isModalConfigured, MODAL_CHAT_MODEL } from '../config/ai.js';
 
 /**
  * Health Check Controller
@@ -119,10 +119,11 @@ export async function healthCheckHandler(req: Request, res: Response): Promise<v
   }
 
   // 4. Tổng hợp trạng thái
-  const isHealthy = dbStatus.status === 'connected' && aiStatus.status !== 'missing';
+  const hasAiConfigured = isModalConfigured || aiStatus.status !== 'missing';
+  const isHealthy = dbStatus.status === 'connected' && hasAiConfigured;
   const overallStatus = isHealthy
     ? 'healthy'
-    : dbStatus.status === 'connected' || aiStatus.status !== 'missing'
+    : dbStatus.status === 'connected' || hasAiConfigured
     ? 'degraded'
     : 'unhealthy';
 
@@ -142,6 +143,16 @@ export async function healthCheckHandler(req: Request, res: Response): Promise<v
       memoryHeapUsed: `${(memoryUsage.heapUsed / 1024 / 1024).toFixed(1)} MB`,
     },
     database: dbStatus,
+    modalAi: {
+      status: isModalConfigured ? 'configured' : 'missing',
+      model: MODAL_CHAT_MODEL,
+      role: 'Primary LLM (Modal OpenAI-Compatible)',
+    },
+    fallbackAi: {
+      status: aiStatus.status,
+      model: process.env.GEMINI_CHAT_MODEL || 'gemini-3.6-flash',
+      role: 'Fallback LLM (Google Gemini 3.6 Dự phòng)',
+    },
     aiKey: aiStatus,
   });
 }

@@ -8,6 +8,7 @@ import {
   getDocumentById,
   getDocumentsByUserId,
   getDocumentByIdAndUser,
+  findDocumentByUrlAndUser,
   deleteDocument,
 } from '../repositories/documentRepository.js';
 import { parseByFileType } from '../services/documentParser.js';
@@ -175,20 +176,32 @@ export async function crawlDocumentHandler(req: AuthenticatedRequest, res: Respo
       return;
     }
 
-    // 1. Tạo document với status: "pending", sourceType: "url" gắn với userId
-    const createdDoc = await createDocument({
-      title: trimmedUrl,
-      sourceType: 'url',
-      sourceUrl: trimmedUrl,
-      rawText: '',
-      status: 'pending',
-      userId,
-    });
+    // 1. Kiểm tra xem URL đã tồn tại trong nguồn của user chưa (tránh tạo trùng bản ghi)
+    const existingDoc = await findDocumentByUrlAndUser(trimmedUrl, userId);
+    let docId: ObjectId;
+
+    if (existingDoc && existingDoc._id) {
+      docId = existingDoc._id;
+      await updateDocument(docId, {
+        status: 'pending',
+        errorMessage: undefined,
+      });
+    } else {
+      const createdDoc = await createDocument({
+        title: trimmedUrl,
+        sourceType: 'url',
+        sourceUrl: trimmedUrl,
+        rawText: '',
+        status: 'pending',
+        userId,
+      });
+      docId = createdDoc._id!;
+    }
 
     // 2. Crawl nội dung trang web
     try {
       const { title, content } = await crawlUrl(trimmedUrl);
-      await updateDocument(createdDoc._id!, {
+      await updateDocument(docId, {
         title: title || trimmedUrl,
         rawText: content,
         status: 'ready',
@@ -196,11 +209,11 @@ export async function crawlDocumentHandler(req: AuthenticatedRequest, res: Respo
 
       // Tự động kích hoạt chunking & embedding
       try {
-        const embeddedDoc = await processDocument(createdDoc._id!.toString());
+        const embeddedDoc = await processDocument(docId.toString());
         res.status(201).json(embeddedDoc);
       } catch (embedErr: any) {
-        console.error(`[Crawl Document] ⚠️ Lỗi tự động embedding document ${createdDoc._id}:`, embedErr.message);
-        const currentDoc = await getDocumentById(createdDoc._id!);
+        console.error(`[Crawl Document] ⚠️ Lỗi tự động embedding document ${docId}:`, embedErr.message);
+        const currentDoc = await getDocumentById(docId);
         res.status(201).json(currentDoc);
       }
     } catch (crawlErr: any) {
@@ -209,7 +222,7 @@ export async function crawlDocumentHandler(req: AuthenticatedRequest, res: Respo
         res.status(400).json({ error: 'URL không được phép truy cập' });
         return;
       }
-      const failedDoc = await updateDocument(createdDoc._id!, {
+      const failedDoc = await updateDocument(docId, {
         status: 'failed',
         errorMessage: crawlErr.message || 'Lỗi khi crawl nội dung từ URL',
       });

@@ -164,7 +164,22 @@ export async function getDocumentsByIdsAndUser(
 }
 
 /**
- * Xóa một document và toàn bộ các chunk liên quan trong collection document_chunks
+ * Tìm document của user theo URL nguồn (tránh trùng lặp khi crawl lại)
+ */
+export async function findDocumentByUrlAndUser(
+  url: string,
+  userId: string
+): Promise<Document | null> {
+  const db = getDb();
+  return await db.collection<Document>(COLLECTION_NAME).findOne({
+    userId,
+    sourceUrl: url,
+  });
+}
+
+/**
+ * Xóa một document và toàn bộ các chunk liên quan trong collection document_chunks.
+ * Đồng thời dọn dẹp triệt để các bản ghi trùng lặp cùng URL hoặc cùng Title của user đó.
  */
 export async function deleteDocument(
   id: string | ObjectId,
@@ -173,15 +188,34 @@ export async function deleteDocument(
   const db = getDb();
   const objectId = typeof id === 'string' ? new ObjectId(id) : id;
 
-  const result = await db
-    .collection<Document>(COLLECTION_NAME)
-    .deleteOne({ _id: objectId, userId });
+  const targetDoc = await db.collection<Document>(COLLECTION_NAME).findOne({ _id: objectId, userId });
+  if (!targetDoc) return false;
 
-  if (result.deletedCount > 0) {
-    // Xóa toàn bộ các chunk trong collection document_chunks
-    await deleteChunksByDocumentId(objectId);
-    return true;
+  const matchCriteria: any[] = [{ _id: objectId }];
+  if (targetDoc.sourceUrl) {
+    matchCriteria.push({ sourceUrl: targetDoc.sourceUrl });
+  }
+  if (targetDoc.title) {
+    matchCriteria.push({ title: targetDoc.title });
   }
 
-  return false;
+  const matchingDocs = await db.collection<Document>(COLLECTION_NAME).find(
+    { userId, $or: matchCriteria },
+    { projection: { _id: 1 } }
+  ).toArray();
+
+  const docIdsToDelete = matchingDocs.map((d) => d._id as ObjectId);
+
+  // Xóa toàn bộ các chunk trong collection document_chunks
+  const chunksCollection = db.collection('document_chunks');
+  await chunksCollection.deleteMany({ documentId: { $in: docIdsToDelete } });
+
+  // Xóa toàn bộ documents trùng lặp
+  const result = await db.collection<Document>(COLLECTION_NAME).deleteMany({
+    _id: { $in: docIdsToDelete },
+    userId,
+  });
+
+  return result.deletedCount > 0;
 }
+

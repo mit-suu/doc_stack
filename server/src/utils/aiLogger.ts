@@ -198,4 +198,113 @@ export const aiLogger = {
     }
     console.log(`${colors.dim}------------------------------------------------------------${colors.reset}`);
   },
+
+  /**
+   * Log khi có lỗi gọi AI hoặc đang tự động retry / exponential backoff
+   */
+  retry(info: {
+    action: string;
+    model: string;
+    attempt: number;
+    maxRetries?: number;
+    status?: number;
+    delayMs?: number;
+    reason: string;
+  }) {
+    const time = new Date().toLocaleTimeString('vi-VN');
+    const { action, model, attempt, maxRetries = 3, status, delayMs, reason } = info;
+
+    console.log('');
+    console.log(
+      `${colors.bgMagenta}${colors.bold} 🔁 [AI RETRY / RATE LIMIT MONITOR] ${colors.reset} ${colors.dim}${time}${colors.reset}`
+    );
+    console.log(`  ${colors.bold}Tác vụ:${colors.reset}     ${colors.cyan}${action}${colors.reset}`);
+    console.log(`  ${colors.bold}Model:${colors.reset}      ${colors.magenta}${model}${colors.reset}`);
+    console.log(
+      `  ${colors.bold}Lần thử:${colors.reset}    ${colors.yellow}Lần #${attempt}${maxRetries ? ` / ${maxRetries}` : ''}${colors.reset}`
+    );
+    if (status) {
+      const statusColor = status === 429 ? colors.yellow : colors.red;
+      console.log(
+        `  ${colors.bold}Mã HTTP:${colors.reset}    ${statusColor}${status} ${status === 429 ? '(Quá hạn ngạch / Rate Limit Quota Exceeded)' : ''}${colors.reset}`
+      );
+    }
+    console.log(`  ${colors.bold}Nguyên nhân:${colors.reset} ${colors.red}${truncate(reason, 120)}${colors.reset}`);
+    if (delayMs) {
+      console.log(
+        `  ${colors.bold}Chờ đợi:${colors.reset}    ${colors.yellow}Tự động thử lại sau ${formatDuration(delayMs)} (Exponential Backoff)${colors.reset}`
+      );
+    }
+    console.log(`${colors.dim}------------------------------------------------------------${colors.reset}`);
+  },
+
+  /**
+   * Log khi gọi AI thành công sau khi đã retry
+   */
+  retrySuccess(info: {
+    action: string;
+    model: string;
+    attempt: number;
+    durationMs: number;
+  }) {
+    const time = new Date().toLocaleTimeString('vi-VN');
+    const { action, model, attempt, durationMs } = info;
+
+    console.log('');
+    console.log(
+      `${colors.bgBlue}${colors.bold} ✅ [AI RETRY SUCCESS] ${colors.reset} ${colors.dim}${time}${colors.reset}`
+    );
+    console.log(`  ${colors.bold}Tác vụ:${colors.reset}     ${colors.cyan}${action}${colors.reset}`);
+    console.log(`  ${colors.bold}Model:${colors.reset}      ${colors.magenta}${model}${colors.reset}`);
+    console.log(
+      `  ${colors.bold}Kết quả:${colors.reset}    ${colors.green}Thành công ở lần thử #${attempt} (Tổng ${formatDuration(durationMs)})${colors.reset}`
+    );
+    console.log(`${colors.dim}------------------------------------------------------------${colors.reset}`);
+  },
+
+  /**
+   * Log khi đã retry tối đa số lần nhưng vẫn thất bại
+   */
+  retryExhausted(info: {
+    action: string;
+    model: string;
+    totalAttempts: number;
+    error: string;
+  }) {
+    const time = new Date().toLocaleTimeString('vi-VN');
+    const { action, model, totalAttempts, error } = info;
+
+    console.log('');
+    console.log(
+      `${colors.red}${colors.bold} ❌ [AI RETRY EXHAUSTED - THẤT BẠI HOÀN TOÀN] ${colors.reset} ${colors.dim}${time}${colors.reset}`
+    );
+    console.log(`  ${colors.bold}Tác vụ:${colors.reset}     ${colors.cyan}${action}${colors.reset}`);
+    console.log(`  ${colors.bold}Model:${colors.reset}      ${colors.magenta}${model}${colors.reset}`);
+    console.log(
+      `  ${colors.bold}Số lần:${colors.reset}     ${colors.red}Đã thử ${totalAttempts} lần nhưng không thành công${colors.reset}`
+    );
+    console.log(`  ${colors.bold}Lỗi cuối:${colors.reset}   ${colors.red}${error}${colors.reset}`);
+    console.log(`${colors.dim}------------------------------------------------------------${colors.reset}`);
+  },
+
+  /**
+   * Log khi kích hoạt mô hình dự phòng (Fallback Model)
+   */
+  fallback(info: {
+    primaryModel: string;
+    fallbackModel: string;
+    reason: string;
+  }) {
+    const time = new Date().toLocaleTimeString('vi-VN');
+    const { primaryModel, fallbackModel, reason } = info;
+
+    console.log('');
+    console.log(
+      `${colors.bgMagenta}${colors.bold} 🛡️ [AI MODEL FALLBACK KÍCH HOẠT] ${colors.reset} ${colors.dim}${time}${colors.reset}`
+    );
+    console.log(`  ${colors.bold}Model chính:${colors.reset}     ${colors.red}${primaryModel} (Gặp sự cố)${colors.reset}`);
+    console.log(`  ${colors.bold}Model dự phòng:${colors.reset}  ${colors.green}${fallbackModel} (Đang tự động chuyển tiếp)${colors.reset}`);
+    console.log(`  ${colors.bold}Lý do chuyển đổi:${colors.reset} ${colors.yellow}${truncate(reason, 120)}${colors.reset}`);
+    console.log(`${colors.dim}------------------------------------------------------------${colors.reset}`);
+  },
 };

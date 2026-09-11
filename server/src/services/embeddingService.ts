@@ -37,9 +37,15 @@ async function retryWithBackoff<T>(
       }
 
       const delay = baseDelay * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 200);
-      console.warn(
-        `[EmbeddingService] ⚠️ Gặp rate limit, đang thử lại lần ${attempt}/${maxRetries} sau ${delay}ms...`
-      );
+      aiLogger.retry({
+        action: 'embedding (retryWithBackoff)',
+        model: DEFAULT_EMBEDDING_MODEL,
+        attempt,
+        maxRetries,
+        status: 429,
+        reason: err.message,
+        delayMs: delay,
+      });
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }

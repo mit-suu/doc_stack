@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DocStack — RAG</title>
+<style>
+  :root{
+    --bg: #0D1117;
+    --bg-panel: #141B24;
+    --ink: #E9EDF2;
+    --ink-dim: #8A96A3;
+    --line: #232B36;
+    --teal: #3DD6C2;
+    --amber: #E8A852;
+    --mono: 'JetBrains Mono', 'Courier New', monospace;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ height:100%; background:var(--bg); overflow:hidden; }
+  body{
+    font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+    color:var(--ink);
+  }
+
+  .deck{ position:relative; width:100vw; height:100vh; }
+
+  .slide{
+    position:absolute; inset:0;
+    display:none;
+    padding: 7vh 9vw;
+    flex-direction:column;
+    justify-content:center;
+  }
+  .slide.active{ display:flex; }
+
+  .kicker{
+    font-family:var(--mono);
+    font-size:13px;
+    letter-spacing:0.04em;
+    color:var(--teal);
+    margin-bottom:18px;
+  }
+  h1{
+    font-size:clamp(34px,4.4vw,58px);
+    line-height:1.08;
+    font-weight:700;
+    letter-spacing:-0.01em;
+    max-width:16ch;
+  }
+  h2{
+    font-size:clamp(26px,3.2vw,40px);
+    line-height:1.12;
+    font-weight:700;
+    letter-spacing:-0.01em;
+    margin-bottom:6px;
+  }
+  .sub{
+    font-size:clamp(15px,1.35vw,19px);
+    color:var(--ink-dim);
+    max-width:52ch;
+    margin-top:14px;
+    line-height:1.55;
+  }
+
+  /* ---- title slide ---- */
+  .slide-title{ align-items:flex-start; }
+  .logo-row{ display:flex; align-items:baseline; gap:14px; margin-bottom:28px; }
+  .logo-mark{
+    font-family:var(--mono); font-size:15px; color:var(--ink-dim);
+    border:1px solid var(--line); padding:5px 10px; border-radius:4px;
+  }
+  .title-flow{
+    margin-top:44px;
+    display:flex; align-items:center; gap:18px;
+    font-family:var(--mono); font-size:14px; color:var(--ink-dim);
+  }
+  .title-flow .pt{ color:var(--ink); }
+  .title-flow .arrow{ color:var(--teal); }
+
+  /* ---- body slides ---- */
+  .body-grid{ display:grid; grid-template-columns: 1fr; gap:30px; margin-top:10px; }
+  ul.points{ list-style:none; display:flex; flex-direction:column; gap:14px; margin-top:8px; }
+  ul.points li{
+    font-size:clamp(15px,1.3vw,18px);
+    line-height:1.5;
+    color:var(--ink);
+    padding-left:22px;
+    position:relative;
+    max-width:62ch;
+  }
+  ul.points li::before{
+    content:"—";
+    position:absolute; left:0; color:var(--amber);
+  }
+  ul.points li b{ color:var(--ink); font-weight:600; }
+  ul.points li .dim{ color:var(--ink-dim); }
+
+  /* ---- pipeline diagram ---- */
+  .pipeline{
+    font-family:var(--mono);
+    background:var(--bg-panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:26px 30px;
+    margin-top:26px;
+    max-width:760px;
+  }
+  .pipeline .step{
+    display:flex; align-items:center; gap:14px;
+    font-size:14.5px;
+    color:var(--ink);
+    padding:9px 0;
+  }
+  .pipeline .step .n{
+    color:var(--teal); min-width:18px;
+  }
+  .pipeline .step .lbl-dim{ color:var(--ink-dim); }
+  .pipeline .down{
+    color:var(--line);
+    padding-left:32px;
+    font-size:13px;
+    line-height:1.1;
+  }
+
+  /* ---- two column ---- */
+  .cols{ display:grid; grid-template-columns: 1fr 1fr; gap:44px; margin-top:14px; }
+  .col-card{
+    background:var(--bg-panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:22px 24px;
+  }
+  .col-card h3{
+    font-size:16px; font-weight:700; color:var(--teal);
+    margin-bottom:12px;
+    font-family:var(--mono);
+  }
+  .col-card p, .col-card li{
+    font-size:14.5px; color:var(--ink-dim); line-height:1.55;
+  }
+  .col-card ul{ list-style:none; display:flex; flex-direction:column; gap:8px; }
+  .col-card li::before{ content:"·"; color:var(--amber); margin-right:8px; }
+
+  /* ---- commands table ---- */
+  table.cmd{ border-collapse:collapse; margin-top:20px; width:100%; max-width:760px; }
+  table.cmd td{
+    padding:10px 16px 10px 0;
+    border-bottom:1px solid var(--line);
+    font-size:14.5px;
+    vertical-align:top;
+  }
+  table.cmd td.c{
+    font-family:var(--mono); color:var(--teal); white-space:nowrap;
+  }
+  table.cmd td.d{ color:var(--ink); }
+  table.cmd tr:first-child td{ color:var(--ink-dim); font-size:12px; font-family:var(--mono); border-bottom:1px solid var(--line); padding-bottom:8px; }
+
+  /* ---- footer / progress ---- */
+  .foot{
+    position:absolute; bottom:5vh; left:9vw; right:9vw;
+    display:flex; justify-content:space-between; align-items:center;
+    font-family:var(--mono); font-size:12px; color:var(--ink-dim);
+  }
+  .progress{ display:flex; gap:6px; }
+  .progress span{ width:22px; height:3px; background:var(--line); border-radius:2px; }
+  .progress span.on{ background:var(--teal); }
+
+  /* nav hint */
+  .nav-hint{
+    position:absolute; top:5vh; right:9vw;
+    font-family:var(--mono); font-size:12px; color:var(--ink-dim);
+  }
+
+  @media (max-width: 760px){
+    .cols{ grid-template-columns:1fr; }
+    .slide{ padding:8vh 7vw; }
+  }
+</style>
+</head>
+<body>
+
+<div class="deck" id="deck">
+
+  <!-- SLIDE 1: TITLE -->
+  <section class="slide slide-title active">
+    <div class="logo-row">
+      <span class="logo-mark">DocStack 🦈</span>
+    </div>
+    <h1>Sổ ghi chú RAG cho việc học công nghệ mới</h1>
+    <p class="sub">Trả lời dựa trên tài liệu chính thức thật — không đoán, có trích dẫn nguồn.</p>
+    <div class="title-flow">
+      <span class="pt">Crawl</span><span class="arrow">→</span>
+      <span class="pt">Embed</span><span class="arrow">→</span>
+      <span class="pt">Retrieve</span><span class="arrow">→</span>
+      <span class="pt">Trả lời</span>
+    </div>
+  </section>
+
+  <!-- SLIDE 2: VẤN ĐỀ -->
+  <section class="slide">
+    <div class="kicker">01 — Vấn đề</div>
+    <h2>LLM thường trả lời từ trí nhớ, không từ tài liệu thật</h2>
+    <ul class="points">
+      <li>Doc công nghệ mới dài, rải rác, khó tra cứu nhanh</li>
+      <li>Tự đọc rồi tổng hợp tốn thời gian</li>
+      <li><b>Hỏi thẳng LLM</b> dễ gặp "ảo giác" — thiếu ngữ cảnh, thiếu cập nhật</li>
+    </ul>
+  </section>
+
+  <!-- SLIDE 3: RAG LÀ GÌ -->
+  <section class="slide">
+    <div class="kicker">02 — RAG là gì</div>
+    <h2>Retrieval-Augmented Generation</h2>
+    <ul class="points">
+      <li><b>Retrieval</b> — tìm đoạn tài liệu liên quan nhất đến câu hỏi</li>
+      <li><b>Generation</b> — đưa đoạn đó làm ngữ cảnh, LLM trả lời dựa trên đó</li>
+      <li class="dim">Kết quả: LLM <b>đọc tài liệu thật rồi mới trả lời</b>, thay vì đoán</li>
+    </ul>
+  </section>
+
+  <!-- SLIDE 4: DATA IMPORT -->
+  <section class="slide">
+    <div class="kicker">03 — Giai đoạn 1 · Nạp dữ liệu</div>
+    <h2>Data Import</h2>
+    <div class="pipeline">
+      <div class="step"><span class="n">1</span> URL tài liệu <span class="lbl-dim">→ crawl batch</span></div>
+      <div class="down">│</div>
+      <div class="step"><span class="n">2</span> Extract + Chunking <span class="lbl-dim">— chia đoạn nhỏ</span></div>
+      <div class="down">│</div>
+      <div class="step"><span class="n">3</span> Embedding <span class="lbl-dim">— Gemini Embedding 001, 3072d</span></div>
+      <div class="down">│</div>
+      <div class="step"><span class="n">4</span> Lưu vào <span class="lbl-dim">MongoDB Atlas Vector DB</span></div>
+    </div>
+  </section>
+
+  <!-- SLIDE 5: CHAT RAG -->
+  <section class="slide">
+    <div class="kicker">04 — Giai đoạn 2 · Truy vấn</div>
+    <h2>Chat RAG</h2>
+    <div class="pipeline">
+      <div class="step"><span class="n">1</span> Câu hỏi <span class="lbl-dim">→ embedding</span></div>
+      <div class="down">│</div>
+      <div class="step"><span class="n">2</span> Vector Search <span class="lbl-dim">— so khớp theo ngữ nghĩa</span></div>
+      <div class="down">│</div>
+      <div class="step"><span class="n">3</span> Top-K chunks <span class="lbl-dim">liên quan nhất</span></div>
+      <div class="down">│</div>
+      <div class="step"><span class="n">4</span> LLM + Context <span class="lbl-dim">→ trả lời kèm nguồn</span></div>
+    </div>
+  </section>
+
+  <!-- SLIDE 6: LLM + FALLBACK -->
+  <section class="slide">
+    <div class="kicker">05 — Bộ não trả lời</div>
+    <h2>GLM-5.3 với fallback tự động</h2>
+    <div class="cols">
+      <div class="col-card">
+        <h3>MODEL CHÍNH</h3>
+        <ul>
+          <li>GLM-5.3, deploy trên Modal</li>
+          <li>Suy luận qua <b>&lt;think&gt;</b> trước khi trả lời</li>
+          <li>Tự loại bỏ phần thinking khỏi kết quả</li>
+        </ul>
+      </div>
+      <div class="col-card">
+        <h3>DỰ PHÒNG</h3>
+        <ul>
+          <li>Gemini Flash</li>
+          <li>Tự chuyển khi model chính lỗi</li>
+          <li>Không gián đoạn trải nghiệm</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 7: TƯƠNG TÁC -->
+  <section class="slide">
+    <div class="kicker">06 — Tương tác</div>
+    <h2>Slash Commands & tự gợi ý</h2>
+    <table class="cmd">
+      <tr><td class="c">lệnh</td><td class="d">mô tả</td></tr>
+      <tr><td class="c">/explain</td><td class="d">Giải thích khái niệm</td></tr>
+      <tr><td class="c">/simple</td><td class="d">Giải thích đơn giản</td></tr>
+      <tr><td class="c">/deep</td><td class="d">Phân tích chi tiết từ docs</td></tr>
+      <tr><td class="c">/compare</td><td class="d">So sánh công nghệ</td></tr>
+      <tr><td class="c">/quiz</td><td class="d">Kiểm tra kiến thức</td></tr>
+    </table>
+    <p class="sub" style="margin-top:20px">Thiếu tài liệu? Hệ thống tự phát hiện và gợi ý crawl thêm.</p>
+  </section>
+
+  <!-- SLIDE 8: VÌ SAO HIỆU QUẢ -->
+  <section class="slide">
+    <div class="kicker">07 — Vì sao hiệu quả</div>
+    <h2>Bám sát tài liệu thật</h2>
+    <ul class="points">
+      <li>Câu trả lời có căn cứ, giảm ảo giác</li>
+      <li>Cập nhật dễ — crawl lại là có kiến thức mới</li>
+      <li>Trích dẫn nguồn → dễ kiểm chứng</li>
+      <li class="dim">Không cần fine-tune lại mô hình khi công nghệ thay đổi</li>
+    </ul>
+  </section>
+
+  <div class="nav-hint">← → điều hướng</div>
+  <div class="foot">
+    <span id="slide-label">01 / 08</span>
+    <div class="progress" id="progress"></div>
+  </div>
+
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  const total = slides.length;
+  let idx = 0;
+
+  const progressEl = document.getElementById('progress');
+  for(let i=0;i<total;i++){
+    const s = document.createElement('span');
+    if(i===0) s.classList.add('on');
+    progressEl.appendChild(s);
+  }
+  const dots = progressEl.querySelectorAll('span');
+  const label = document.getElementById('slide-label');
+
+  function pad(n){ return n<10 ? '0'+n : ''+n; }
+
+  function go(newIdx){
+    if(newIdx < 0 || newIdx >= total) return;
+    slides[idx].classList.remove('active');
+    dots[idx].classList.remove('on');
+    idx = newIdx;
+    slides[idx].classList.add('active');
+    dots[idx].classList.add('on');
+    label.textContent = pad(idx+1) + ' / ' + pad(total);
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if(e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown'){ go(idx+1); }
+    else if(e.key === 'ArrowLeft' || e.key === 'PageUp'){ go(idx-1); }
+  });
+
+  let touchStartX = 0;
+  document.addEventListener('touchstart', e => touchStartX = e.touches[0].clientX);
+  document.addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    if(dx > 50) go(idx-1);
+    else if(dx < -50) go(idx+1);
+  });
+
+  document.addEventListener('click', (e) => {
+    const w = window.innerWidth;
+    if(e.clientX > w*0.7) go(idx+1);
+    else if(e.clientX < w*0.3) go(idx-1);
+  });
+</script>
+
+</body>
+</html>

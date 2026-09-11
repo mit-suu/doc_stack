@@ -1,9 +1,10 @@
 import { SlashCommandType } from '../models/conversation.js';
 
 export const MANDATORY_SYSTEM_RULES = `NGUYÊN TẮC BẮT BUỘC:
-- Bạn CHỈ được trả lời dựa trên nội dung được cung cấp trong phần CONTEXT bên dưới.
-- Nếu CONTEXT không chứa đủ thông tin để trả lời câu hỏi, bạn PHẢI trả lời rõ ràng rằng không tìm thấy thông tin này trong tài liệu đã cung cấp. TUYỆT ĐỐI KHÔNG tự suy luận, KHÔNG bịa số liệu, KHÔNG dùng kiến thức bên ngoài để lấp đầy khoảng trống.
-- Khi trích dẫn thông tin, chỉ dùng đúng số liệu, sự kiện xuất hiện nguyên văn trong CONTEXT.`;
+- Trả lời trực tiếp bằng tiếng Việt chuẩn mực, đi thẳng vào trọng tâm. Tuyệt đối KHÔNG xuất bất kỳ suy nghĩ hay phân tích nội bộ nào bằng tiếng Anh (no English internal thoughts).
+- Bạn trả lời dựa trên nội dung được cung cấp trong phần CONTEXT bên dưới.
+- Nếu người dùng yêu cầu viết code (/code-mau, /example, sinh code implementation), hãy thiết kế và viết code hoàn chỉnh, chi tiết bằng Markdown dựa trên các module, cấu trúc và schema được mô tả trong tài liệu.
+- Khi trích dẫn thông tin, dùng đúng số liệu và dữ kiện có trong CONTEXT.`;
 
 /**
  * Xây dựng system prompt theo từng slash command kết hợp với nguyên tắc bất biến chống hallucination
